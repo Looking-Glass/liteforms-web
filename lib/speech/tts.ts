@@ -158,6 +158,165 @@ export function createTtsAdapter(input: CreateTtsAdapterInput): TtsAdapter {
   };
 }
 
+// ── IncrementalSpeechBuffer ────────────────────────────────────────────────────
+
+const SOFT_BOUNDARY_MIN_CHARS = 256;
+
+const ABBREVIATIONS = new Set([
+  "Dr", "Mr", "Mrs", "Ms", "Prof", "Rev", "St", "Gen", "Col", "Maj", "Capt",
+  "Lt", "Sgt", "Cpl", "Pvt", "Cmdr", "Gov", "Sen", "Rep", "Dept", "Jr", "Sr"
+]);
+
+/**
+ * Incrementally ingests LLM streaming tokens and extracts complete sentences
+ * as soon as they form. Mirrors the openclaw IncrementalSpeechBuffer approach.
+ *
+ * Boundary rules (in priority order):
+ *  - Hard boundaries: `.` `?` `!` `\n` (with guards for abbreviations and decimals)
+ *  - Soft boundary: any whitespace after ≥72 visible characters (prevents
+ *    indefinite waiting when sentences lack terminal punctuation)
+ *  - Code fences: content inside ``` ... ``` is silently skipped — never spoken
+ */
+export class IncrementalSpeechBuffer {
+  private accumulated = "";
+  private spokenOffset = 0;
+  private inCodeBlock = false;
+
+  /** Feed a new text chunk. Returns any complete segments ready for synthesis. */
+  ingest(text: string, isFinal: boolean): string[] {
+    this.accumulated += text;
+    return this.extractSegments(isFinal);
+  }
+
+  /** Discard all buffered state (e.g. after a think-block reset). */
+  reset() {
+    this.accumulated = "";
+    this.spokenOffset = 0;
+    this.inCodeBlock = false;
+  }
+
+  private extractSegments(isFinal: boolean): string[] {
+    const segments: string[] = [];
+    const text = this.accumulated;
+    let idx = this.spokenOffset;
+    let inCodeBlock = this.inCodeBlock;
+    // visibleBuffer accumulates only the speakable (non-code-block) text
+    // for the current in-progress segment.
+    let visibleBuffer = "";
+    let charsSinceBoundary = 0;
+    // Position in `text` after the last completed segment (drives spokenOffset).
+    let lastBoundaryTextIdx = this.spokenOffset;
+
+    while (idx < text.length) {
+      // Code fence toggle: ```
+      if (
+        text[idx] === "`" &&
+        idx + 2 < text.length &&
+        text[idx + 1] === "`" &&
+        text[idx + 2] === "`"
+      ) {
+        inCodeBlock = !inCodeBlock;
+        idx += 3;
+        continue;
+      }
+
+      if (!inCodeBlock) {
+        const ch = text[idx];
+        charsSinceBoundary++;
+        visibleBuffer += ch;
+
+        if (
+          this.isHardBoundary(ch, text, idx) ||
+          this.isSoftBoundary(ch, charsSinceBoundary)
+        ) {
+          const segment = visibleBuffer.trim();
+          if (segment) segments.push(segment);
+          visibleBuffer = "";
+          charsSinceBoundary = 0;
+          lastBoundaryTextIdx = idx + 1;
+        }
+      }
+
+      idx++;
+    }
+
+    if (isFinal) {
+      const remainder = visibleBuffer.trim();
+      if (remainder) segments.push(remainder);
+      this.spokenOffset = text.length;
+    } else {
+      this.spokenOffset = lastBoundaryTextIdx;
+    }
+
+    this.inCodeBlock = inCodeBlock;
+    return segments;
+  }
+
+  private isHardBoundary(ch: string, text: string, idx: number): boolean {
+    if (ch === "?" || ch === "!" || ch === "\n") return true;
+    if (ch !== ".") return false;
+
+    // Decimal guard: digit.digit → not a sentence boundary
+    if (
+      idx > 0 &&
+      idx + 1 < text.length &&
+      /\d/.test(text[idx - 1]) &&
+      /\d/.test(text[idx + 1])
+    ) {
+      return false;
+    }
+
+    // Abbreviation guard: look back up to 10 chars for a known abbreviation
+    const preceding = text.slice(Math.max(0, idx - 10), idx);
+    const wordMatch = preceding.match(/([A-Za-z]+)$/);
+    if (wordMatch && ABBREVIATIONS.has(wordMatch[1])) return false;
+
+    return true;
+  }
+
+  private isSoftBoundary(ch: string, charsSinceBoundary: number): boolean {
+    return charsSinceBoundary >= SOFT_BOUNDARY_MIN_CHARS && /\s/.test(ch);
+  }
+}
+
+// ── Decimal rewriting ──────────────────────────────────────────────────────────
+
+/**
+ * Rewrites decimal numbers so TTS pronounces them naturally.
+ * e.g.  "18.5"  →  "18 point 5"
+ */
+export function rewriteDecimalsForTts(text: string): string {
+  return text.replace(/(\d+)\.(\d+)/g, "$1 point $2");
+}
+
+/**
+ * Returns the portion of the raw LLM output that is safe to feed to TTS.
+ * - Strips completed <think>...</think> blocks.
+ * - Truncates at any `<` that has no matching `>` after it, preventing
+ *   partial think-block tags from polluting the TTS buffer.
+ */
+export function getSafeTextForTts(raw: string): string {
+  // Strip complete think blocks, trailing whitespace runs, etc.
+  let sanitized = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/<think>[\s\S]*$/gi, "")
+    .replace(/<\/think>/gi, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  // Truncate at any potentially incomplete XML/HTML tag to avoid
+  // emitting partial <think> tokens like "<thi" to the TTS buffer.
+  const ltIdx = sanitized.lastIndexOf("<");
+  if (ltIdx >= 0 && sanitized.indexOf(">", ltIdx) < 0) {
+    sanitized = sanitized.slice(0, ltIdx).trimEnd();
+  }
+
+  return sanitized;
+}
+
+// ── Legacy helpers (kept for backward compatibility) ──────────────────────────
+
 export function splitSpeakableText(text: string) {
   const chunks: string[] = [];
   let remainder = text;

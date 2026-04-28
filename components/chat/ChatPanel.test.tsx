@@ -5,7 +5,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import { ChatPanel } from "./ChatPanel";
 import type { CharacterConfig } from "./ChatPanel";
 import { createLlmAdapter } from "@/lib/llm";
-import { createAsrAdapter } from "@/lib/speech";
+import { createAsrAdapter, createTtsAdapter } from "@/lib/speech";
 
 afterEach(cleanup);
 
@@ -538,6 +538,106 @@ describe("ChatPanel Settings TTS dropdown", () => {
     renderPanel();
     selectTtsProvider("deepgram");
     expect(screen.getByRole("textbox", { name: "Voice" })).toBeInTheDocument();
+  });
+});
+
+// ── Streaming TTS pipeline ───────────────────────────────────────────────────
+
+describe("ChatPanel streaming TTS pipeline", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("starts TTS synthesis before the LLM stream finishes", async () => {
+    let resumeStream: (() => void) | null = null;
+
+    vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      streamText: vi.fn().mockReturnValue(
+        (async function* () {
+          yield "Hello. ";
+          await new Promise<void>((r) => {
+            resumeStream = r;
+          });
+          yield "Goodbye.";
+        })()
+      )
+    });
+
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ audio: new ArrayBuffer(4), mimeType: "audio/wav" });
+    vi.mocked(createTtsAdapter).mockReturnValueOnce({ synthesize, provider: "kokoro" });
+
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText("Type a message"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    // Synthesis of the first sentence should start before the stream ends
+    await waitFor(() => {
+      expect(synthesize).toHaveBeenCalledTimes(1);
+    });
+
+    // Confirm the stream is still paused (not yet finished)
+    expect(resumeStream).not.toBeNull();
+    expect(synthesize).toHaveBeenCalledWith(expect.stringContaining("Hello."));
+
+    // Now resume the stream and allow it to finish
+    resumeStream!();
+
+    await waitFor(() => {
+      expect(synthesize).toHaveBeenCalledTimes(2);
+    });
+    expect(synthesize).toHaveBeenCalledWith(expect.stringContaining("Goodbye."));
+  });
+
+  it("synthesizes each sentence chunk separately", async () => {
+    vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      streamText: vi.fn().mockReturnValue(
+        (async function* () {
+          yield "First sentence. Second sentence. Third.";
+        })()
+      )
+    });
+
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ audio: new ArrayBuffer(4), mimeType: "audio/wav" });
+    vi.mocked(createTtsAdapter).mockReturnValueOnce({ synthesize, provider: "kokoro" });
+
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText("Type a message"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(synthesize).toHaveBeenCalledTimes(3);
+    });
+    expect(synthesize).toHaveBeenNthCalledWith(1, "First sentence.");
+    expect(synthesize).toHaveBeenNthCalledWith(2, "Second sentence.");
+    expect(synthesize).toHaveBeenNthCalledWith(3, "Third.");
+  });
+
+  it("rewrites decimals before synthesis", async () => {
+    vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      streamText: vi.fn().mockReturnValue(
+        (async function* () {
+          yield "The score is 9.5 out of 10.";
+        })()
+      )
+    });
+
+    const synthesize = vi
+      .fn()
+      .mockResolvedValue({ audio: new ArrayBuffer(4), mimeType: "audio/wav" });
+    vi.mocked(createTtsAdapter).mockReturnValueOnce({ synthesize, provider: "kokoro" });
+
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText("Type a message"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(synthesize).toHaveBeenCalled();
+    });
+    expect(synthesize).toHaveBeenCalledWith("The score is 9 point 5 out of 10.");
   });
 });
 

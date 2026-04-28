@@ -21,7 +21,11 @@ workerScope.addEventListener("message", async (event: MessageEvent<WorkerMessage
 
   try {
     if (type === "preload") {
-      await getKokoro(payload, (progress) => postProgress(id, progress));
+      const tts = await getKokoro(payload, (progress) => postProgress(id, progress));
+      // Run a short silent synthesis to trigger JIT compilation / GPU kernel
+      // initialisation. Without this, the very first real generate() call incurs
+      // an extra delay even though the model weights are already loaded.
+      await warmupKokoro(tts, (payload as Omit<TtsWorkerRequest, "text">).voice);
       workerScope.postMessage({ id, type: "progress", progress: { status: "ready", progress: 100, message: "Kokoro ready" } });
       workerScope.postMessage({ id, ok: true, result: undefined });
       return;
@@ -82,6 +86,17 @@ function getKokoro(request: Omit<TtsWorkerRequest, "text">, onProgress?: (progre
   } as Parameters<typeof KokoroTTS.from_pretrained>[1] & { progress_callback?: (progress: ProgressInfo) => void });
   kokoroCache.set(key, created);
   return created;
+}
+
+async function warmupKokoro(tts: KokoroTTS, voice: string) {
+  try {
+    await tts.generate("Hi.", {
+      voice: voice as Parameters<KokoroTTS["generate"]>[1] extends { voice?: infer V } ? V : never,
+      speed: 1.0
+    });
+  } catch {
+    // Warm-up errors are non-fatal — the model is still usable.
+  }
 }
 
 function postProgress(id: number, info: ProgressInfo) {

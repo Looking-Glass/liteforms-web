@@ -15,8 +15,11 @@ import {
   normalizeAsrConfig,
   normalizeTtsConfig,
   playTtsResult,
-  splitSpeakableText
+  IncrementalSpeechBuffer,
+  rewriteDecimalsForTts,
+  getSafeTextForTts
 } from "@/lib/speech";
+import type { TtsResult } from "@/lib/speech";
 import { DistilWhisperWorkerClient, KokoroWorkerClient } from "@/lib/speech/workerClient";
 import type { AsrConfig, AsrProviderId, TtsConfig, TtsProviderId } from "@/lib/speech";
 import { dispatchAvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
@@ -263,51 +266,125 @@ export function ChatPanel({
     try {
       const normalizedConfig = normalizeProviderConfig(config);
       const adapter = createLlmAdapter({ config: normalizedConfig, localGemmaWorker: localGemmaWorkerRef.current });
-      let responseText = "";
+      const ttsAdapter = createTtsAdapter({ config: ttsConfig, worker: kokoroWorkerRef.current });
 
-      for await (const chunk of adapter.streamText({
-        config: normalizedConfig,
-        persona: {
-          name: character.name,
-          pronouns: character.pronouns,
-          personality: character.personality
-        },
-        messages: nextMessages
-      })) {
-        responseText += chunk;
-        setMessages([...nextMessages, { role: "assistant", content: sanitizeAssistantText(responseText) }]);
+      let responseText = "";
+      const ttsBuffer = new IncrementalSpeechBuffer();
+      // synthQueue holds in-flight synthesis Promises started as each sentence
+      // is detected — concurrently with the LLM still streaming.
+      const synthQueue: Promise<TtsResult>[] = [];
+      let safeCursor = 0;
+      let chunkCount = 0;
+
+      // ── Async signal: lets the concurrent drain task wake up immediately
+      // when a new synthesis promise is pushed or the stream ends. ──────────
+      let pendingSignals = 0;
+      let signalResolve: (() => void) | null = null;
+      const signal = () => {
+        pendingSignals++;
+        const r = signalResolve;
+        signalResolve = null;
+        r?.();
+      };
+      const waitSignal = (): Promise<void> => {
+        if (pendingSignals > 0) { pendingSignals--; return Promise.resolve(); }
+        return new Promise<void>(r => { signalResolve = r; });
+      };
+
+      // ── Drain task: runs concurrently, starts playing as soon as the first
+      // synthesis resolves — without waiting for the LLM stream to end. ─────
+      let streamDone = false;
+      let drainIdx = 0;
+      let drainAborted = false;
+      setSpeechError("");
+      setSpeechStatus("speaking");
+      const drainTask = (async () => {
+        try {
+          while (!drainAborted) {
+            if (drainIdx < synthQueue.length) {
+              const result = await synthQueue[drainIdx++];
+              if (drainAborted) break;
+              await playTtsResult(result, { onLipSyncFrame: dispatchAvatarLipSyncFrame });
+            } else if (streamDone) {
+              break;
+            } else {
+              await waitSignal();
+            }
+          }
+          if (!drainAborted) setSpeechStatus("idle");
+        } catch (caught) {
+          if (!drainAborted) {
+            setSpeechError(caught instanceof Error ? caught.message : "Speech playback failed.");
+            setSpeechStatus("error");
+          }
+        }
+      })();
+
+      const queueSegment = (segment: string) => {
+        const prepared = rewriteDecimalsForTts(segment);
+        setLastTtsDebug(`TTS: "${prepared}"`);
+        synthQueue.push(ttsAdapter.synthesize(prepared));
+        signal(); // wake drain task immediately
+      };
+
+      try {
+        for await (const chunk of adapter.streamText({
+          config: normalizedConfig,
+          persona: {
+            name: character.name,
+            pronouns: character.pronouns,
+            personality: character.personality
+          },
+          messages: nextMessages
+        })) {
+          responseText += chunk;
+          chunkCount++;
+          setMessages([...nextMessages, { role: "assistant", content: sanitizeAssistantText(responseText) }]);
+
+          // Feed new safe text into the sentence buffer and immediately queue
+          // synthesis for any complete sentences that emerge.
+          const safeText = getSafeTextForTts(responseText);
+          if (safeText.length > safeCursor) {
+            const delta = safeText.slice(safeCursor);
+            safeCursor = safeText.length;
+            for (const seg of ttsBuffer.ingest(delta, false)) {
+              queueSegment(seg);
+            }
+          } else if (safeText.length < safeCursor) {
+            safeCursor = safeText.length;
+            ttsBuffer.reset();
+          }
+        }
+      } catch (caught) {
+        // LLM stream failed — abort the drain task and re-throw
+        drainAborted = true;
+        signal();
+        throw caught;
       }
-      const assistantText = sanitizeAssistantText(responseText);
-      setMessages([...nextMessages, { role: "assistant", content: assistantText }]);
+
+      // Flush any remaining buffered text after the stream ends.
+      const finalSanitized = sanitizeAssistantText(responseText);
+      const finalDelta = finalSanitized.slice(safeCursor);
+      const finalSegments = finalDelta
+        ? ttsBuffer.ingest(finalDelta, true)
+        : ttsBuffer.ingest("", true);
+      for (const seg of finalSegments) {
+        queueSegment(seg);
+      }
+
+      // Signal drain task that no more items are coming.
+      streamDone = true;
+      signal();
+
+      setMessages([...nextMessages, { role: "assistant", content: finalSanitized }]);
       setStatus("idle");
-      void speakAssistantResponse(assistantText);
+      // drainTask continues in background — no void needed, just let it run
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Provider request failed.";
       setError(message);
       setMessages(nextMessages);
       setStatus("error");
-    }
-  }
-
-  async function speakAssistantResponse(text: string) {
-    const chunks = splitSpeakableText(text);
-    const speakableChunks = chunks.remainder ? [...chunks.chunks, chunks.remainder] : chunks.chunks;
-    if (speakableChunks.length === 0) {
-      return;
-    }
-    setSpeechError("");
-    setSpeechStatus("speaking");
-    try {
-      const adapter = createTtsAdapter({ config: ttsConfig, worker: kokoroWorkerRef.current });
-      for (const chunk of speakableChunks) {
-        setLastTtsDebug(`TTS: "${chunk}"`);
-        const audio = await adapter.synthesize(chunk);
-        await playTtsResult(audio, { onLipSyncFrame: dispatchAvatarLipSyncFrame });
-      }
       setSpeechStatus("idle");
-    } catch (caught) {
-      setSpeechError(caught instanceof Error ? caught.message : "Speech playback failed.");
-      setSpeechStatus("error");
     }
   }
 

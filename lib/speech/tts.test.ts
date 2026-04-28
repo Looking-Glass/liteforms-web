@@ -1,6 +1,180 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTtsAdapter, splitSpeakableText } from "./tts";
+import { createTtsAdapter, splitSpeakableText, IncrementalSpeechBuffer, rewriteDecimalsForTts } from "./tts";
 import type { TtsWorkerLike } from "./types";
+
+// ── IncrementalSpeechBuffer ────────────────────────────────────────────────────
+
+describe("IncrementalSpeechBuffer", () => {
+  it("returns no segments when text has no complete sentence yet", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Hello there", false)).toEqual([]);
+  });
+
+  it("extracts a segment on a period boundary", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Hello there.", false)).toEqual(["Hello there."]);
+  });
+
+  it("extracts a segment on a question mark boundary", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("How are you?", false)).toEqual(["How are you?"]);
+  });
+
+  it("extracts a segment on an exclamation mark boundary", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Great!", false)).toEqual(["Great!"]);
+  });
+
+  it("extracts a segment on a newline boundary", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("First line\nSecond", false)).toEqual(["First line"]);
+  });
+
+  it("extracts multiple sentences from a single chunk", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Hello there. How are you? Fine!", false)).toEqual([
+      "Hello there.",
+      "How are you?",
+      "Fine!"
+    ]);
+  });
+
+  it("accumulates text across multiple ingest calls", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Hello th", false)).toEqual([]);
+    expect(buf.ingest("ere. How are you?", false)).toEqual(["Hello there.", "How are you?"]);
+  });
+
+  it("does not re-emit already extracted text", () => {
+    const buf = new IncrementalSpeechBuffer();
+    buf.ingest("Hello there. ", false);
+    expect(buf.ingest("How are you?", false)).toEqual(["How are you?"]);
+  });
+
+  it("does not split at abbreviation Dr.", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Dr. Smith said hello.", false)).toEqual(["Dr. Smith said hello."]);
+  });
+
+  it("does not split at abbreviation Mr. within a sentence", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Mr. Jones arrived. Good.", false)).toEqual(["Mr. Jones arrived.", "Good."]);
+  });
+
+  it("does not split at other common abbreviations", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Prof. Lee and Mrs. Kim met. Done.", false)).toEqual([
+      "Prof. Lee and Mrs. Kim met.",
+      "Done."
+    ]);
+  });
+
+  it("does not split at decimal numbers", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("The price is 18.5 dollars. Good deal!", false)).toEqual([
+      "The price is 18.5 dollars.",
+      "Good deal!"
+    ]);
+  });
+
+  it("does not split at decimal numbers mid-stream", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Pi is 3.14159 approximately", false)).toEqual([]);
+  });
+
+  it("skips text inside triple-backtick code fences and does not include it in segments", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("Here is code. ```\nprint('hi')\n``` Done.", false)).toEqual([
+      "Here is code.",
+      "Done."
+    ]);
+  });
+
+  it("does not split at punctuation inside a code fence", () => {
+    const buf = new IncrementalSpeechBuffer();
+    // The "end." inside the fence should NOT produce a segment
+    const segments = buf.ingest("See this. ```\nreturn x.end()\n``` That's all.", false);
+    expect(segments).not.toContain("return x.end()");
+    expect(segments.some((s) => s.includes("return"))).toBe(false);
+  });
+
+  it("extracts a soft-boundary segment after 72+ visible chars with whitespace", () => {
+    const buf = new IncrementalSpeechBuffer();
+    const longText = "a".repeat(73) + " continued text";
+    const segments = buf.ingest(longText, false);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].length).toBeGreaterThanOrEqual(73);
+  });
+
+  it("does not split below the 72-char soft boundary threshold", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("a".repeat(50) + " continued", false)).toEqual([]);
+  });
+
+  it("flushes remaining text when isFinal is true", () => {
+    const buf = new IncrementalSpeechBuffer();
+    expect(buf.ingest("No punctuation here", true)).toEqual(["No punctuation here"]);
+  });
+
+  it("flushes buffered partial text on a subsequent isFinal call", () => {
+    const buf = new IncrementalSpeechBuffer();
+    buf.ingest("First sentence. Remaining", false);
+    expect(buf.ingest("", true)).toEqual(["Remaining"]);
+  });
+
+  it("returns empty array for empty isFinal flush when nothing is buffered", () => {
+    const buf = new IncrementalSpeechBuffer();
+    buf.ingest("All done.", false);
+    expect(buf.ingest("", true)).toEqual([]);
+  });
+
+  it("reset clears buffer state for reuse", () => {
+    const buf = new IncrementalSpeechBuffer();
+    buf.ingest("Partial text", false);
+    buf.reset();
+    expect(buf.ingest("Fresh start.", false)).toEqual(["Fresh start."]);
+  });
+});
+
+// ── rewriteDecimalsForTts ──────────────────────────────────────────────────────
+
+describe("rewriteDecimalsForTts", () => {
+  it("rewrites a standalone decimal number", () => {
+    expect(rewriteDecimalsForTts("18.5")).toBe("18 point 5");
+  });
+
+  it("rewrites a decimal embedded in a sentence", () => {
+    expect(rewriteDecimalsForTts("The temperature is 98.6 degrees.")).toBe(
+      "The temperature is 98 point 6 degrees."
+    );
+  });
+
+  it("rewrites multiple decimals in the same text", () => {
+    expect(rewriteDecimalsForTts("Pi is 3.14 and e is 2.71.")).toBe(
+      "Pi is 3 point 14 and e is 2 point 71."
+    );
+  });
+
+  it("does not affect sentence-ending periods", () => {
+    expect(rewriteDecimalsForTts("Hello. World.")).toBe("Hello. World.");
+  });
+
+  it("handles leading-zero decimals", () => {
+    expect(rewriteDecimalsForTts("Only 0.5 left.")).toBe("Only 0 point 5 left.");
+  });
+
+  it("handles multi-digit fractional parts", () => {
+    expect(rewriteDecimalsForTts("Pi is approximately 3.14159.")).toBe(
+      "Pi is approximately 3 point 14159."
+    );
+  });
+
+  it("does not rewrite a period that is not between digits", () => {
+    expect(rewriteDecimalsForTts("Go to example.com today.")).toBe("Go to example.com today.");
+  });
+});
+
+// ── Existing TTS adapter tests ─────────────────────────────────────────────────
 
 describe("TTS adapters", () => {
   it("splits streamed assistant text into speakable chunks", () => {
