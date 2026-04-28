@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { createIndexedDbCredentialRepository } from "@/lib/storage/indexedDbCredentialRepository";
+import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
 import type { BrowserCredential } from "@/lib/storage/types";
+
+/** LLM providers that need credentials, plus speech providers for TTS/STT keys. */
+const CREDENTIAL_PROVIDER_OPTIONS = [
+  ...LLM_PROVIDER_OPTIONS.filter((p) => CREDENTIAL_PROVIDER_IDS.includes(p.id)),
+  { id: "elevenlabs", label: "ElevenLabs" },
+  { id: "deepgram", label: "Deepgram" }
+];
 
 export function CredentialSettingsPanel() {
   const [credentials, setCredentials] = useState<BrowserCredential[]>([]);
@@ -39,11 +47,9 @@ export function CredentialSettingsPanel() {
         <label>
           Provider
           <select name="providerId" defaultValue="openai">
-            <option value="openai">OpenAI</option>
-            <option value="anthropic">Anthropic</option>
-            <option value="openrouter">OpenRouter</option>
-            <option value="elevenlabs">ElevenLabs</option>
-            <option value="deepgram">Deepgram</option>
+            {CREDENTIAL_PROVIDER_OPTIONS.map((p) => (
+              <option key={p.id} value={p.id}>{p.label}</option>
+            ))}
           </select>
         </label>
         <label>

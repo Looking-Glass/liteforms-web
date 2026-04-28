@@ -325,6 +325,165 @@ describe("mic auto-submit flow", () => {
   });
 });
 
+// ── Settings model dropdown ───────────────────────────────────────────────────
+
+describe("ChatPanel Settings model dropdown", () => {
+  function selectProvider(providerId: string) {
+    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: providerId } });
+  }
+
+  // ── New providers appear ────────────────────────────────────────────────
+
+  it("provider dropdown includes Google AI Studio", () => {
+    renderPanel();
+    selectProvider("google");
+    expect(screen.getByLabelText("Model provider")).toHaveValue("google");
+  });
+
+  it("provider dropdown includes xAI (Grok)", () => {
+    renderPanel();
+    selectProvider("xai");
+    expect(screen.getByLabelText("Model provider")).toHaveValue("xai");
+  });
+
+  it("provider dropdown includes Mistral AI", () => {
+    renderPanel();
+    selectProvider("mistral");
+    expect(screen.getByLabelText("Model provider")).toHaveValue("mistral");
+  });
+
+  it("provider dropdown includes Groq", () => {
+    renderPanel();
+    selectProvider("groq");
+    expect(screen.getByLabelText("Model provider")).toHaveValue("groq");
+  });
+
+  it("provider dropdown includes Together AI", () => {
+    renderPanel();
+    selectProvider("together");
+    expect(screen.getByLabelText("Model provider")).toHaveValue("together");
+  });
+
+  // ── Model dropdown vs text input ────────────────────────────────────────
+
+  it("shows a model dropdown for Anthropic (provider with known models)", () => {
+    renderPanel();
+    selectProvider("anthropic");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows a model dropdown for Google AI Studio", () => {
+    renderPanel();
+    selectProvider("google");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("shows a model dropdown for xAI", () => {
+    renderPanel();
+    selectProvider("xai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("shows a model dropdown for Mistral AI", () => {
+    renderPanel();
+    selectProvider("mistral");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("shows a free-text model input for Ollama (dynamic models)", () => {
+    renderPanel();
+    selectProvider("ollama");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows a free-text model input for OpenRouter (dynamic gateway)", () => {
+    renderPanel();
+    selectProvider("openrouter");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("shows a free-text model input for Groq", () => {
+    renderPanel();
+    selectProvider("groq");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  // ── Default models ──────────────────────────────────────────────────────
+
+  it("OpenAI defaults to gpt-5.5", () => {
+    renderPanel();
+    selectProvider("openai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.5");
+  });
+
+  it("Anthropic defaults to claude-opus-4-7", () => {
+    renderPanel();
+    selectProvider("anthropic");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("claude-opus-4-7");
+  });
+
+  it("Google defaults to gemini-3.1-pro-preview", () => {
+    renderPanel();
+    selectProvider("google");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gemini-3.1-pro-preview");
+  });
+
+  it("xAI defaults to grok-4", () => {
+    renderPanel();
+    selectProvider("xai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("grok-4");
+  });
+
+  // ── Key model options ───────────────────────────────────────────────────
+
+  it("Anthropic model dropdown includes claude-sonnet-4-5", () => {
+    renderPanel();
+    selectProvider("anthropic");
+    expect(screen.getByRole("option", { name: /claude sonnet 4\.5/i })).toBeInTheDocument();
+  });
+
+  it("Google model dropdown includes gemini-2.5-pro", () => {
+    renderPanel();
+    selectProvider("google");
+    expect(screen.getByRole("option", { name: /gemini 2\.5 pro/i })).toBeInTheDocument();
+  });
+
+  it("xAI model dropdown includes grok-4-fast", () => {
+    renderPanel();
+    selectProvider("xai");
+    expect(screen.getByRole("option", { name: /grok 4 fast$/i })).toBeInTheDocument();
+  });
+
+  it("Mistral model dropdown includes mistral-small-latest", () => {
+    renderPanel();
+    selectProvider("mistral");
+    expect(screen.getByRole("option", { name: /mistral small/i })).toBeInTheDocument();
+  });
+
+  // ── Config integration ──────────────────────────────────────────────────
+
+  it("changing the model dropdown updates the active model", async () => {
+    renderPanel();
+    selectProvider("anthropic");
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
+      target: { value: "claude-sonnet-4-5" }
+    });
+    // Submit a message and verify the adapter is called with the updated model
+    const input = screen.getByPlaceholderText("Type a message");
+    fireEvent.change(input, { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(vi.mocked(createLlmAdapter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({ provider: "anthropic", model: "claude-sonnet-4-5" })
+        })
+      );
+    });
+  });
+});
+
 // ── Local model preloading ────────────────────────────────────────────────────
 
 describe("ChatPanel local model preloading", () => {

@@ -5,6 +5,7 @@ import { createLlmAdapter, getDefaultProviderConfig, getProviderLabel, normalize
 import { sanitizeAssistantText } from "@/lib/llm/output";
 import { LocalGemmaWorkerClient } from "@/lib/llm/localGemmaWorker";
 import type { BaseProviderConfig, ChatMessage, LlmProviderId } from "@/lib/llm";
+import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
 import {
   createAsrAdapter,
   createTtsAdapter,
@@ -70,41 +71,6 @@ export const initialLocalModelLoadState: LocalModelLoadState[] = [
 // session can preload exactly once.
 const preloadStartedSessions = new Set<number>();
 
-const providerOptions: { id: LlmProviderId; label: string; defaultModel: string; defaultBaseUrl?: string }[] = [
-  {
-    id: "browser-local-gemma",
-    label: "Browser local",
-    defaultModel: "onnx-community/gemma-4-E2B-it-ONNX"
-  },
-  { id: "openai", label: "OpenAI API", defaultModel: "gpt-4.1-mini", defaultBaseUrl: "https://api.openai.com/v1" },
-  {
-    id: "chatgpt-subscription",
-    label: "ChatGPT connector",
-    defaultModel: "gpt-5.4",
-    defaultBaseUrl: "http://127.0.0.1:1455"
-  },
-  {
-    id: "anthropic",
-    label: "Anthropic API",
-    defaultModel: "claude-3-5-sonnet-latest",
-    defaultBaseUrl: "https://api.anthropic.com"
-  },
-  {
-    id: "claude-subscription",
-    label: "Claude connector",
-    defaultModel: "claude-code",
-    defaultBaseUrl: "http://127.0.0.1:1456"
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    defaultModel: "openai/gpt-4.1-mini",
-    defaultBaseUrl: "https://openrouter.ai/api/v1"
-  },
-  { id: "ollama", label: "Ollama", defaultModel: "llama3.2", defaultBaseUrl: "http://localhost:11434" },
-  { id: "lmstudio", label: "LM Studio", defaultModel: "local-model", defaultBaseUrl: "http://localhost:1234/v1" },
-  { id: "openclaw", label: "OpenClaw Gateway", defaultModel: "default", defaultBaseUrl: "ws://127.0.0.1:18789" }
-];
 
 export function ChatPanel({
   character,
@@ -150,7 +116,7 @@ export function ChatPanel({
   const preloadCancelledRef = useRef(false);
 
   const providerMeta = useMemo(
-    () => providerOptions.find((provider) => provider.id === config.provider) ?? providerOptions[0],
+    () => LLM_PROVIDER_OPTIONS.find((provider) => provider.id === config.provider) ?? LLM_PROVIDER_OPTIONS[0],
     [config.provider]
   );
   const localModelProgress = useMemo(
@@ -221,7 +187,7 @@ export function ChatPanel({
       // screen's Continue button can enable for any combination, including all-cloud configs.
       if (wantGemma) {
         await preloadLocalModel("gemma", () =>
-          localGemmaWorkerRef.current.preload?.({ model: providerOptions[0].defaultModel }, (progress) =>
+          localGemmaWorkerRef.current.preload?.({ model: LLM_PROVIDER_OPTIONS[0].defaultModel }, (progress) =>
             updateLocalModel("gemma", {
               status: progress.status,
               progress: progress.progress,
@@ -448,7 +414,7 @@ export function ChatPanel({
   }
 
   function updateProvider(providerId: LlmProviderId) {
-    const option = providerOptions.find((provider) => provider.id === providerId) ?? providerOptions[0];
+    const option = LLM_PROVIDER_OPTIONS.find((provider) => provider.id === providerId) ?? LLM_PROVIDER_OPTIONS[0];
     setConfig({
       provider: option.id,
       model: option.defaultModel,
@@ -539,7 +505,7 @@ export function ChatPanel({
             <label>
               Model provider
               <select value={config.provider} onChange={(event) => updateProvider(event.target.value as LlmProviderId)}>
-                {providerOptions.map((provider) => (
+                {LLM_PROVIDER_OPTIONS.map((provider) => (
                   <option key={provider.id} value={provider.id}>
                     {provider.label}
                   </option>
@@ -548,7 +514,17 @@ export function ChatPanel({
             </label>
             <label>
               Model
-              <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
+              {providerMeta.models ? (
+                <select value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })}>
+                  {providerMeta.models.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
+              )}
             </label>
             {config.provider !== "browser-local-gemma" ? (
               <label>
@@ -559,9 +535,7 @@ export function ChatPanel({
                 />
               </label>
             ) : null}
-            {["openai", "chatgpt-subscription", "anthropic", "claude-subscription", "openrouter", "openclaw"].includes(
-              config.provider
-            ) ? (
+            {CREDENTIAL_PROVIDER_IDS.includes(config.provider) ? (
               <label>
                 Credential
                 <input
@@ -775,8 +749,8 @@ function persistLocalModelMetadata() {
       JSON.stringify({
         version: 1,
         storedAt: new Date().toISOString(),
-        models: [
-          { id: "gemma", model: providerOptions[0].defaultModel, dtype: "q4f16", device: "webgpu" },
+          models: [
+          { id: "gemma", model: LLM_PROVIDER_OPTIONS[0].defaultModel, dtype: "q4f16", device: "webgpu" },
           { id: "kokoro", model: "onnx-community/Kokoro-82M-v1.0-ONNX", dtype: "fp32", device: "webgpu" },
           { id: "distil-whisper", model: "onnx-community/distil-small.en", dtype: "q4", device: "webgpu" }
         ]
