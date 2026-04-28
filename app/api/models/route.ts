@@ -1,0 +1,18 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { createServerLiteformsClient, getLiteformsAccessToken } from "@/lib/liteforms-api/server";
+import { toErrorResponse } from "@/lib/http/errors";
+
+export async function POST(request: NextRequest) {
+  try {
+    const accessToken = await getLiteformsAccessToken();
+
+    if (!accessToken) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    const client = createServerLiteformsClient(accessToken);
+    return NextResponse.json(await client.createModel(await request.json()), { status: 201 });
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
