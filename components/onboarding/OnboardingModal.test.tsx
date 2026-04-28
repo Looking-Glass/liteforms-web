@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { OnboardingModal } from "./OnboardingModal";
 import type { LocalModelLoadState } from "@/components/chat/ChatPanel";
@@ -817,5 +817,248 @@ describe("OnboardingModal new cloud provider options", () => {
     renderModal();
     goToLlmAndSelectProvider("nvidia");
     expect(screen.getByRole("option", { name: /kimi k2\.5/i })).toBeInTheDocument();
+  });
+});
+
+// ── Additional TTS provider tests ─────────────────────────────────────────────
+
+function selectTtsProvider(id: string) {
+  fireEvent.change(screen.getByLabelText("Voice provider"), { target: { value: id } });
+}
+
+describe("OnboardingModal TTS step - extended providers", () => {
+  beforeEach(() => {
+    renderModal();
+  });
+
+  // ── All providers present ───────────────────────────────────────────────
+
+  it("TTS dropdown includes OpenAI", () => {
+    goToTtsStep();
+    selectTtsProvider("openai");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("openai");
+  });
+
+  it("TTS dropdown includes Google", () => {
+    goToTtsStep();
+    selectTtsProvider("google");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("google");
+  });
+
+  it("TTS dropdown includes xAI", () => {
+    goToTtsStep();
+    selectTtsProvider("xai");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("xai");
+  });
+
+  it("TTS dropdown includes DeepInfra", () => {
+    goToTtsStep();
+    selectTtsProvider("deepinfra");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("deepinfra");
+  });
+
+  it("TTS dropdown includes OpenRouter", () => {
+    goToTtsStep();
+    selectTtsProvider("openrouter");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("openrouter");
+  });
+
+  it("TTS dropdown includes Inworld", () => {
+    goToTtsStep();
+    selectTtsProvider("inworld");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("inworld");
+  });
+
+  it("TTS dropdown includes MiniMax", () => {
+    goToTtsStep();
+    selectTtsProvider("minimax");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("minimax");
+  });
+
+  it("TTS dropdown includes Gradium", () => {
+    goToTtsStep();
+    selectTtsProvider("gradium");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("gradium");
+  });
+
+  it("TTS dropdown includes Vydra", () => {
+    goToTtsStep();
+    selectTtsProvider("vydra");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("vydra");
+  });
+
+  it("TTS dropdown includes Xiaomi MiMo", () => {
+    goToTtsStep();
+    selectTtsProvider("xiaomi");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("xiaomi");
+  });
+
+  it("TTS dropdown includes Azure Speech", () => {
+    goToTtsStep();
+    selectTtsProvider("azure-speech");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("azure-speech");
+  });
+
+  it("TTS dropdown includes Microsoft Edge TTS", () => {
+    goToTtsStep();
+    selectTtsProvider("microsoft");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("microsoft");
+  });
+
+  it("TTS dropdown includes Volcengine", () => {
+    goToTtsStep();
+    selectTtsProvider("volcengine");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("volcengine");
+  });
+
+  // ── Static model/voice dropdowns ────────────────────────────────────────
+
+  it("OpenAI TTS shows voice dropdown with coral as default", () => {
+    goToTtsStep();
+    selectTtsProvider("openai");
+    const voiceSelect = screen.getByRole("combobox", { name: "Voice" });
+    expect(voiceSelect).toHaveValue("coral");
+    expect(screen.getByRole("option", { name: /alloy/i })).toBeInTheDocument();
+  });
+
+  it("OpenAI TTS shows model dropdown with gpt-4o-mini-tts as default", () => {
+    goToTtsStep();
+    selectTtsProvider("openai");
+    const modelSelect = screen.getByRole("combobox", { name: "Model" });
+    expect(modelSelect).toHaveValue("gpt-4o-mini-tts");
+    expect(screen.getByRole("option", { name: /tts-1 hd/i })).toBeInTheDocument();
+  });
+
+  it("Google TTS shows voice dropdown with Kore as default", () => {
+    goToTtsStep();
+    selectTtsProvider("google");
+    const voiceSelect = screen.getByRole("combobox", { name: "Voice" });
+    expect(voiceSelect).toHaveValue("Kore");
+    expect(screen.getByRole("option", { name: /zephyr/i })).toBeInTheDocument();
+  });
+
+  it("xAI TTS shows voice dropdown with eve as default", () => {
+    goToTtsStep();
+    selectTtsProvider("xai");
+    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("eve");
+  });
+
+  it("MiniMax TTS shows voice dropdown with model dropdown", () => {
+    goToTtsStep();
+    selectTtsProvider("minimax");
+    expect(screen.getByRole("combobox", { name: "Voice" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("speech-2.8-hd");
+  });
+
+  it("Gradium TTS shows voice dropdown with Emma as default", () => {
+    goToTtsStep();
+    selectTtsProvider("gradium");
+    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("YTpq7expH9539ERJ");
+    expect(screen.getByRole("option", { name: /emma/i })).toBeInTheDocument();
+  });
+
+  it("Volcengine TTS shows voice dropdown", () => {
+    goToTtsStep();
+    selectTtsProvider("volcengine");
+    const voiceSelect = screen.getByRole("combobox", { name: "Voice" });
+    expect(voiceSelect).toHaveValue("en_female_anna_mars_bigtts");
+  });
+
+  // ── Dynamic voice providers (text input) ───────────────────────────────
+
+  it("Deepgram TTS shows voice text input (dynamic voices)", () => {
+    goToTtsStep();
+    selectTtsProvider("deepgram");
+    expect(screen.getByRole("textbox", { name: "Voice" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Voice" })).not.toBeInTheDocument();
+  });
+
+  it("ElevenLabs TTS shows voice text input (dynamic voices from API)", () => {
+    goToTtsStep();
+    selectTtsProvider("elevenlabs");
+    expect(screen.getByRole("textbox", { name: "Voice ID" })).toBeInTheDocument();
+  });
+
+  // ── Credential field ────────────────────────────────────────────────────
+
+  it("all cloud TTS providers show a credential input", () => {
+    const cloudIds = ["openai", "google", "xai", "deepinfra", "openrouter", "inworld",
+      "minimax", "gradium", "vydra", "xiaomi", "azure-speech", "volcengine", "elevenlabs", "deepgram"];
+    for (const id of cloudIds) {
+      cleanup();
+      renderModal();
+      goToTtsStep();
+      selectTtsProvider(id);
+      expect(screen.getByLabelText("Voice credential"), `Expected credential for ${id}`).toBeInTheDocument();
+    }
+  });
+
+  it("kokoro and microsoft do not show a credential input", () => {
+    for (const id of ["kokoro", "microsoft"]) {
+      cleanup();
+      renderModal();
+      goToTtsStep();
+      selectTtsProvider(id);
+      expect(screen.queryByLabelText("Voice credential"), `Expected no credential for ${id}`).not.toBeInTheDocument();
+    }
+  });
+});
+
+// ── Additional STT provider tests ─────────────────────────────────────────────
+
+function selectSttProvider(id: string) {
+  fireEvent.change(screen.getByLabelText("Speech input provider"), { target: { value: id } });
+}
+
+describe("OnboardingModal STT step - extended providers", () => {
+  beforeEach(() => {
+    renderModal();
+  });
+
+  it("STT dropdown includes OpenAI", () => {
+    goToSttStep();
+    selectSttProvider("openai");
+    expect(screen.getByLabelText("Speech input provider")).toHaveValue("openai");
+  });
+
+  it("STT dropdown includes xAI", () => {
+    goToSttStep();
+    selectSttProvider("xai");
+    expect(screen.getByLabelText("Speech input provider")).toHaveValue("xai");
+  });
+
+  it("STT dropdown includes Mistral", () => {
+    goToSttStep();
+    selectSttProvider("mistral");
+    expect(screen.getByLabelText("Speech input provider")).toHaveValue("mistral");
+  });
+
+  it("OpenAI STT shows model dropdown with gpt-4o-transcribe as default", () => {
+    goToSttStep();
+    selectSttProvider("openai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-4o-transcribe");
+  });
+
+  it("Mistral STT shows model dropdown with voxtral model as default", () => {
+    goToSttStep();
+    selectSttProvider("mistral");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("voxtral-mini-transcribe-realtime-2602");
+  });
+
+  it("all new cloud STT providers show a credential input", () => {
+    const cloudIds = ["openai", "xai", "mistral", "deepgram", "elevenlabs"];
+    for (const id of cloudIds) {
+      cleanup();
+      renderModal();
+      goToSttStep();
+      selectSttProvider(id);
+      expect(screen.getByLabelText("Transcription credential"), `Expected credential for ${id}`).toBeInTheDocument();
+    }
+  });
+
+  it("distil-whisper does not show a credential input", () => {
+    goToSttStep();
+    selectSttProvider("distil-whisper");
+    expect(screen.queryByLabelText("Transcription credential")).not.toBeInTheDocument();
   });
 });

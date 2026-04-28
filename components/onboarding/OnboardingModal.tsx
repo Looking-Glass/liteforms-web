@@ -5,6 +5,7 @@ import { getDefaultProviderConfig } from "@/lib/llm";
 import type { BaseProviderConfig, LlmProviderId } from "@/lib/llm";
 import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
 import type { AsrConfig, AsrProviderId, TtsConfig, TtsProviderId } from "@/lib/speech";
+import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import { updateEndpointMode } from "@/components/chat/chatPanelUtils";
 import type { LocalModelLoadState } from "@/components/chat/ChatPanel";
 
@@ -50,25 +51,35 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
   }
 
   function updateTtsProvider(providerId: TtsProviderId) {
+    const opt = TTS_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? TTS_PROVIDER_OPTIONS[0];
     if (providerId === "kokoro") {
       setTtsConfig({ provider: "kokoro" });
     } else if (providerId === "elevenlabs") {
-      setTtsConfig({ provider: "elevenlabs", voiceId: "Rachel" });
+      setTtsConfig({ provider: "elevenlabs", voiceId: opt.defaultVoice ?? "Rachel", modelId: opt.defaultModel });
     } else {
-      setTtsConfig({ provider: "deepgram", voice: "aura-asteria-en", model: "aura-asteria-en" });
+      setTtsConfig({
+        provider: providerId as Exclude<TtsProviderId, "kokoro" | "elevenlabs">,
+        voice: opt.defaultVoice,
+        model: opt.defaultModel,
+        baseUrl: opt.defaultBaseUrl
+      } as TtsConfig);
     }
   }
 
   function updateAsrProvider(providerId: AsrProviderId) {
+    const opt = STT_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? STT_PROVIDER_OPTIONS[0];
     if (providerId === "distil-whisper") {
       setAsrConfig({ provider: "distil-whisper" });
-    } else if (providerId === "deepgram") {
-      setAsrConfig({ provider: "deepgram" });
-    } else {
-      // ElevenLabs – share credential if TTS is also ElevenLabs
+    } else if (providerId === "elevenlabs") {
       const sharedCredential =
         ttsConfig.provider === "elevenlabs" && "credential" in ttsConfig ? ttsConfig.credential : undefined;
-      setAsrConfig({ provider: "elevenlabs", credential: sharedCredential });
+      setAsrConfig({ provider: "elevenlabs", credential: sharedCredential, model: opt.defaultModel });
+    } else {
+      setAsrConfig({
+        provider: providerId as Exclude<AsrProviderId, "distil-whisper" | "elevenlabs">,
+        model: opt.defaultModel,
+        baseUrl: opt.defaultBaseUrl
+      } as AsrConfig);
     }
   }
 
@@ -90,6 +101,46 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
   const providerMeta = llmProviderOptions.find((p) => p.id === config.provider) ?? llmProviderOptions[0];
   const showEndpoint = config.provider !== "browser-local-gemma";
   const showCredential = credentialProviders.includes(config.provider);
+
+  const ttsMeta = TTS_PROVIDER_OPTIONS.find((p) => p.id === ttsConfig.provider) ?? TTS_PROVIDER_OPTIONS[0];
+  const sttMeta = STT_PROVIDER_OPTIONS.find((p) => p.id === asrConfig.provider) ?? STT_PROVIDER_OPTIONS[0];
+
+  function getTtsVoice() {
+    if (ttsConfig.provider === "elevenlabs") return ttsConfig.voiceId ?? ttsMeta.defaultVoice ?? "";
+    return "voice" in ttsConfig ? (ttsConfig.voice ?? ttsMeta.defaultVoice ?? "") : "";
+  }
+
+  function setTtsVoice(voice: string) {
+    if (ttsConfig.provider === "elevenlabs") {
+      setTtsConfig({ ...ttsConfig, voiceId: voice });
+    } else {
+      setTtsConfig({ ...ttsConfig, voice } as TtsConfig);
+    }
+  }
+
+  function getTtsModel() {
+    if (ttsConfig.provider === "elevenlabs") return ttsConfig.modelId ?? ttsMeta.defaultModel ?? "";
+    if (ttsConfig.provider === "deepgram") return ttsConfig.voice ?? ttsConfig.model ?? ttsMeta.defaultVoice ?? "";
+    return "model" in ttsConfig ? (ttsConfig.model ?? ttsMeta.defaultModel ?? "") : "";
+  }
+
+  function setTtsModel(model: string) {
+    if (ttsConfig.provider === "elevenlabs") {
+      setTtsConfig({ ...ttsConfig, modelId: model });
+    } else if (ttsConfig.provider === "deepgram") {
+      setTtsConfig({ ...ttsConfig, voice: model, model });
+    } else {
+      setTtsConfig({ ...ttsConfig, model } as TtsConfig);
+    }
+  }
+
+  function getSttModel() {
+    return "model" in asrConfig ? (asrConfig.model ?? sttMeta.defaultModel ?? "") : "";
+  }
+
+  function setSttModel(model: string) {
+    setAsrConfig({ ...asrConfig, model } as AsrConfig);
+  }
 
   // ── Welcome ────────────────────────────────────────────────────────────────
 
@@ -226,40 +277,52 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
           <StepIndicator current={2} total={3} />
           <h2 className="onboarding-title">Select text-to-speech (the voice)</h2>
           <p className="onboarding-intro">
-            Use our free local model (Kokoro) or connect your own (ElevenLabs, Deepgram, etc.).
+            Use our free local model (Kokoro) or connect your own (ElevenLabs, OpenAI, Google, etc.).
           </p>
           <fieldset className="onboarding-fieldset" aria-label="TTS settings">
             <legend className="sr-only">TTS settings</legend>
             <label>
-              Voice
+              Voice provider
               <select
                 value={ttsConfig.provider}
                 onChange={(e) => updateTtsProvider(e.target.value as TtsProviderId)}
               >
-                <option value="kokoro">Kokoro</option>
-                <option value="elevenlabs">ElevenLabs</option>
-                <option value="deepgram">Deepgram TTS</option>
+                {TTS_PROVIDER_OPTIONS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
               </select>
             </label>
-            {ttsConfig.provider === "elevenlabs" && (
+            {ttsMeta.voices ? (
               <label>
-                ElevenLabs voice ID
-                <input
-                  value={ttsConfig.voiceId ?? "Rachel"}
-                  onChange={(e) => setTtsConfig({ ...ttsConfig, voiceId: e.target.value })}
-                />
+                Voice
+                <select value={getTtsVoice()} onChange={(e) => setTtsVoice(e.target.value)}>
+                  {ttsMeta.voices.map((v) => (
+                    <option key={v.id} value={v.id}>{v.label}</option>
+                  ))}
+                </select>
               </label>
-            )}
-            {ttsConfig.provider === "deepgram" && (
+            ) : ttsConfig.provider !== "kokoro" ? (
               <label>
-                Deepgram voice model
-                <input
-                  value={ttsConfig.voice ?? ttsConfig.model ?? "aura-asteria-en"}
-                  onChange={(e) => setTtsConfig({ ...ttsConfig, voice: e.target.value, model: e.target.value })}
-                />
+                {ttsConfig.provider === "elevenlabs" ? "Voice ID" : "Voice"}
+                <input value={getTtsVoice()} onChange={(e) => setTtsVoice(e.target.value)} />
               </label>
-            )}
-            {ttsConfig.provider !== "kokoro" && (
+            ) : null}
+            {ttsMeta.models ? (
+              <label>
+                Model
+                <select value={getTtsModel()} onChange={(e) => setTtsModel(e.target.value)}>
+                  {ttsMeta.models.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : ttsMeta.defaultModel !== undefined && ttsConfig.provider !== "kokoro" && ttsConfig.provider !== "deepgram" ? (
+              <label>
+                Model
+                <input value={getTtsModel()} onChange={(e) => setTtsModel(e.target.value)} />
+              </label>
+            ) : null}
+            {ttsMeta.needsCredential && (
               <label>
                 Voice credential
                 <input
@@ -292,22 +355,37 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
         <StepIndicator current={3} total={3} />
         <h2 className="onboarding-title">Select speech-to-text (the ears)</h2>
         <p className="onboarding-intro">
-          Use our free model (Distil-Whisper) or connect your own (ElevenLabs, Deepgram, etc.).
+          Use our free model (Distil-Whisper) or connect your own (OpenAI, Deepgram, ElevenLabs, etc.).
         </p>
         <fieldset className="onboarding-fieldset" aria-label="STT settings">
           <legend className="sr-only">STT settings</legend>
           <label>
-            Speech input
+            Speech input provider
             <select
               value={asrConfig.provider}
               onChange={(e) => updateAsrProvider(e.target.value as AsrProviderId)}
             >
-              <option value="distil-whisper">Distil-Whisper</option>
-              <option value="deepgram">Deepgram STT</option>
-              <option value="elevenlabs">ElevenLabs STT</option>
+              {STT_PROVIDER_OPTIONS.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
             </select>
           </label>
-          {asrConfig.provider !== "distil-whisper" && (
+          {sttMeta.models ? (
+            <label>
+              Model
+              <select value={getSttModel()} onChange={(e) => setSttModel(e.target.value)}>
+                {sttMeta.models.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            </label>
+          ) : sttMeta.defaultModel !== undefined && asrConfig.provider !== "distil-whisper" ? (
+            <label>
+              Model
+              <input value={getSttModel()} onChange={(e) => setSttModel(e.target.value)} />
+            </label>
+          ) : null}
+          {sttMeta.needsCredential && (
             <label>
               Transcription credential
               <input

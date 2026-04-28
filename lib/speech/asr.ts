@@ -32,23 +32,60 @@ export function createAsrAdapter(input: CreateAsrAdapterInput): AsrAdapter {
     };
   }
 
+  if (config.provider === "elevenlabs") {
+    return {
+      provider: "elevenlabs",
+      transcribe(audio) {
+        return transcribeElevenLabs(audio, config, fetchImpl);
+      }
+    };
+  }
+
+  if (config.provider === "openai") {
+    return {
+      provider: "openai",
+      transcribe(audio) {
+        return transcribeOpenAiCompatible(audio, config, fetchImpl);
+      }
+    };
+  }
+
+  if (config.provider === "xai") {
+    return {
+      provider: "xai",
+      transcribe(audio) {
+        return transcribeOpenAiCompatible(audio, config, fetchImpl);
+      }
+    };
+  }
+
+  // mistral (default / fallthrough)
   return {
-    provider: "elevenlabs",
+    provider: "mistral",
     transcribe(audio) {
-      return transcribeElevenLabs(audio, config, fetchImpl);
+      return transcribeOpenAiCompatible(audio, config, fetchImpl);
     }
   };
 }
 
-async function transcribeDeepgram(audio: Blob, config: Extract<ReturnType<typeof normalizeAsrConfig>, { provider: "deepgram" }>, fetchImpl: FetchLike): Promise<AsrResult> {
-  const response = await fetchImpl(`${trimTrailingSlash(config.baseUrl)}/listen?model=${encodeURIComponent(config.model)}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Token ${config.credential}`,
-      "Content-Type": audio.type || "application/octet-stream"
-    },
-    body: audio
-  });
+// ── Deepgram ──────────────────────────────────────────────────────────────────
+
+async function transcribeDeepgram(
+  audio: Blob,
+  config: Extract<ReturnType<typeof normalizeAsrConfig>, { provider: "deepgram" }>,
+  fetchImpl: FetchLike
+): Promise<AsrResult> {
+  const response = await fetchImpl(
+    `${trimSlash(config.baseUrl)}/listen?model=${encodeURIComponent(config.model)}`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Token ${config.credential}`,
+        "Content-Type": audio.type || "application/octet-stream"
+      },
+      body: audio
+    }
+  );
   if (!response.ok) {
     throw new Error(`Deepgram STT failed with ${response.status}`);
   }
@@ -59,16 +96,20 @@ async function transcribeDeepgram(audio: Blob, config: Extract<ReturnType<typeof
   };
 }
 
-async function transcribeElevenLabs(audio: Blob, config: Extract<ReturnType<typeof normalizeAsrConfig>, { provider: "elevenlabs" }>, fetchImpl: FetchLike): Promise<AsrResult> {
+// ── ElevenLabs ────────────────────────────────────────────────────────────────
+
+async function transcribeElevenLabs(
+  audio: Blob,
+  config: Extract<ReturnType<typeof normalizeAsrConfig>, { provider: "elevenlabs" }>,
+  fetchImpl: FetchLike
+): Promise<AsrResult> {
   const formData = new FormData();
   formData.set("model_id", config.model);
   formData.set("file", audio, "recording.webm");
 
-  const response = await fetchImpl(`${trimTrailingSlash(config.baseUrl)}/speech-to-text`, {
+  const response = await fetchImpl(`${trimSlash(config.baseUrl)}/speech-to-text`, {
     method: "POST",
-    headers: {
-      "xi-api-key": config.credential
-    },
+    headers: { "xi-api-key": config.credential },
     body: formData
   });
   if (!response.ok) {
@@ -81,7 +122,36 @@ async function transcribeElevenLabs(audio: Blob, config: Extract<ReturnType<type
   };
 }
 
-function trimTrailingSlash(input: string) {
+// ── OpenAI-compatible (openai, xai, mistral) ──────────────────────────────────
+
+async function transcribeOpenAiCompatible(
+  audio: Blob,
+  config: { credential: string; baseUrl: string; model: string; language: string },
+  fetchImpl: FetchLike
+): Promise<AsrResult> {
+  const formData = new FormData();
+  formData.set("file", audio, "recording.webm");
+  if (config.model) formData.set("model", config.model);
+  if (config.language) formData.set("language", config.language);
+
+  const response = await fetchImpl(`${trimSlash(config.baseUrl)}/audio/transcriptions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${config.credential}` },
+    body: formData
+  });
+  if (!response.ok) {
+    throw new Error(`STT provider failed with ${response.status}`);
+  }
+  const body = await response.json();
+  return {
+    text: body?.text ?? "",
+    language: config.language
+  };
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function trimSlash(input: string) {
   return input.replace(/\/+$/, "");
 }
 

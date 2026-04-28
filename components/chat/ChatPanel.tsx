@@ -6,6 +6,7 @@ import { sanitizeAssistantText } from "@/lib/llm/output";
 import { LocalGemmaWorkerClient } from "@/lib/llm/localGemmaWorker";
 import type { BaseProviderConfig, ChatMessage, LlmProviderId } from "@/lib/llm";
 import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
+import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import {
   createAsrAdapter,
   createTtsAdapter,
@@ -424,27 +425,74 @@ export function ChatPanel({
   }
 
   function updateTtsProvider(providerId: TtsProviderId) {
+    const opt = TTS_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? TTS_PROVIDER_OPTIONS[0];
     if (providerId === "kokoro") {
       setTtsConfig({ provider: "kokoro" });
-      return;
+    } else if (providerId === "elevenlabs") {
+      setTtsConfig({ provider: "elevenlabs", voiceId: opt.defaultVoice ?? "Rachel", modelId: opt.defaultModel });
+    } else {
+      setTtsConfig({
+        provider: providerId as Exclude<TtsProviderId, "kokoro" | "elevenlabs">,
+        voice: opt.defaultVoice,
+        model: opt.defaultModel,
+        baseUrl: opt.defaultBaseUrl
+      } as TtsConfig);
     }
-    if (providerId === "elevenlabs") {
-      setTtsConfig({ provider: "elevenlabs", voiceId: "Rachel" });
-      return;
-    }
-    setTtsConfig({ provider: "deepgram", voice: "aura-asteria-en", model: "aura-asteria-en" });
   }
 
   function updateAsrProvider(providerId: AsrProviderId) {
+    const opt = STT_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? STT_PROVIDER_OPTIONS[0];
     if (providerId === "distil-whisper") {
       setAsrConfig({ provider: "distil-whisper" });
-      return;
+    } else if (providerId === "elevenlabs") {
+      setAsrConfig({ provider: "elevenlabs", model: opt.defaultModel });
+    } else {
+      setAsrConfig({
+        provider: providerId as Exclude<AsrProviderId, "distil-whisper" | "elevenlabs">,
+        model: opt.defaultModel,
+        baseUrl: opt.defaultBaseUrl
+      } as AsrConfig);
     }
-    if (providerId === "deepgram") {
-      setAsrConfig({ provider: "deepgram" });
-      return;
+  }
+
+  const ttsMeta = TTS_PROVIDER_OPTIONS.find((p) => p.id === ttsConfig.provider) ?? TTS_PROVIDER_OPTIONS[0];
+  const sttMeta = STT_PROVIDER_OPTIONS.find((p) => p.id === asrConfig.provider) ?? STT_PROVIDER_OPTIONS[0];
+
+  function getTtsVoice() {
+    if (ttsConfig.provider === "elevenlabs") return ttsConfig.voiceId ?? ttsMeta.defaultVoice ?? "";
+    return "voice" in ttsConfig ? (ttsConfig.voice ?? ttsMeta.defaultVoice ?? "") : "";
+  }
+
+  function setTtsVoice(voice: string) {
+    if (ttsConfig.provider === "elevenlabs") {
+      setTtsConfig({ ...ttsConfig, voiceId: voice });
+    } else {
+      setTtsConfig({ ...ttsConfig, voice } as TtsConfig);
     }
-    setAsrConfig({ provider: "elevenlabs" });
+  }
+
+  function getTtsModel() {
+    if (ttsConfig.provider === "elevenlabs") return ttsConfig.modelId ?? ttsMeta.defaultModel ?? "";
+    if (ttsConfig.provider === "deepgram") return ttsConfig.voice ?? ttsConfig.model ?? ttsMeta.defaultVoice ?? "";
+    return "model" in ttsConfig ? (ttsConfig.model ?? ttsMeta.defaultModel ?? "") : "";
+  }
+
+  function setTtsModel(model: string) {
+    if (ttsConfig.provider === "elevenlabs") {
+      setTtsConfig({ ...ttsConfig, modelId: model });
+    } else if (ttsConfig.provider === "deepgram") {
+      setTtsConfig({ ...ttsConfig, voice: model, model });
+    } else {
+      setTtsConfig({ ...ttsConfig, model } as TtsConfig);
+    }
+  }
+
+  function getSttModel() {
+    return "model" in asrConfig ? (asrConfig.model ?? sttMeta.defaultModel ?? "") : "";
+  }
+
+  function setSttModel(model: string) {
+    setAsrConfig({ ...asrConfig, model } as AsrConfig);
   }
 
   function handleVrmLoad(event: React.ChangeEvent<HTMLInputElement>) {
@@ -563,49 +611,64 @@ export function ChatPanel({
           <section className="speech-settings" aria-label="Speech settings">
             <div className="speech-grid">
               <label>
-                Voice
+                Voice provider
                 <select
                   value={ttsConfig.provider}
                   onChange={(event) => updateTtsProvider(event.target.value as TtsProviderId)}
                 >
-                  <option value="kokoro">Kokoro local</option>
-                  <option value="elevenlabs">ElevenLabs</option>
-                  <option value="deepgram">Deepgram TTS</option>
+                  {TTS_PROVIDER_OPTIONS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
                 </select>
               </label>
               <label>
-                Speech input
+                Speech input provider
                 <select
                   value={asrConfig.provider}
                   onChange={(event) => updateAsrProvider(event.target.value as AsrProviderId)}
                 >
-                  <option value="distil-whisper">Distil-Whisper local</option>
-                  <option value="deepgram">Deepgram STT</option>
-                  <option value="elevenlabs">ElevenLabs STT</option>
+                  {STT_PROVIDER_OPTIONS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
                 </select>
               </label>
             </div>
-            {ttsConfig.provider === "elevenlabs" ? (
+            {ttsMeta.voices ? (
               <label>
-                ElevenLabs voice ID
-                <input
-                  value={ttsConfig.voiceId ?? "Rachel"}
-                  onChange={(event) => setTtsConfig({ ...ttsConfig, voiceId: event.target.value })}
-                />
+                Voice
+                <select value={getTtsVoice()} onChange={(event) => setTtsVoice(event.target.value)}>
+                  {ttsMeta.voices.map((v) => (
+                    <option key={v.id} value={v.id}>{v.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : ttsConfig.provider !== "kokoro" ? (
+              <label>
+                {ttsConfig.provider === "elevenlabs" ? "Voice ID" : "Voice"}
+                <input value={getTtsVoice()} onChange={(event) => setTtsVoice(event.target.value)} />
               </label>
             ) : null}
-            {ttsConfig.provider === "deepgram" ? (
+            {ttsMeta.models ? (
               <label>
-                Deepgram voice model
-                <input
-                  value={ttsConfig.voice ?? ttsConfig.model ?? "aura-asteria-en"}
-                  onChange={(event) =>
-                    setTtsConfig({ ...ttsConfig, voice: event.target.value, model: event.target.value })
-                  }
-                />
+                Voice model
+                <select value={getTtsModel()} onChange={(event) => setTtsModel(event.target.value)}>
+                  {ttsMeta.models.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
               </label>
             ) : null}
-            {ttsConfig.provider !== "kokoro" ? (
+            {sttMeta.models ? (
+              <label>
+                Transcription model
+                <select value={getSttModel()} onChange={(event) => setSttModel(event.target.value)}>
+                  {sttMeta.models.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label}</option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            {ttsMeta.needsCredential ? (
               <label>
                 Voice credential
                 <input
@@ -616,7 +679,7 @@ export function ChatPanel({
                 />
               </label>
             ) : null}
-            {asrConfig.provider !== "distil-whisper" ? (
+            {sttMeta.needsCredential ? (
               <label>
                 Transcription credential
                 <input

@@ -484,6 +484,93 @@ describe("ChatPanel Settings model dropdown", () => {
   });
 });
 
+// ── Settings TTS/STT dropdowns ────────────────────────────────────────────────
+
+describe("ChatPanel Settings TTS dropdown", () => {
+  function selectTtsProvider(id: string) {
+    fireEvent.change(screen.getByLabelText("Voice provider"), { target: { value: id } });
+  }
+
+  it("Voice provider dropdown includes OpenAI TTS", () => {
+    renderPanel();
+    selectTtsProvider("openai");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("openai");
+  });
+
+  it("Voice provider dropdown includes Google TTS", () => {
+    renderPanel();
+    selectTtsProvider("google");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("google");
+  });
+
+  it("Voice provider dropdown includes xAI TTS", () => {
+    renderPanel();
+    selectTtsProvider("xai");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("xai");
+  });
+
+  it("Voice provider dropdown includes MiniMax", () => {
+    renderPanel();
+    selectTtsProvider("minimax");
+    expect(screen.getByLabelText("Voice provider")).toHaveValue("minimax");
+  });
+
+  it("OpenAI TTS shows voice dropdown with static voice list", () => {
+    renderPanel();
+    selectTtsProvider("openai");
+    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("coral");
+    expect(screen.getByRole("combobox", { name: "Voice model" })).toHaveValue("gpt-4o-mini-tts");
+  });
+
+  it("Google TTS shows voice dropdown with Kore as default", () => {
+    renderPanel();
+    selectTtsProvider("google");
+    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("Kore");
+  });
+
+  it("xAI TTS shows voice dropdown", () => {
+    renderPanel();
+    selectTtsProvider("xai");
+    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("eve");
+  });
+
+  it("Deepgram TTS shows voice text input (dynamic)", () => {
+    renderPanel();
+    selectTtsProvider("deepgram");
+    expect(screen.getByRole("textbox", { name: "Voice" })).toBeInTheDocument();
+  });
+});
+
+describe("ChatPanel Settings STT dropdown", () => {
+  function selectSttProvider(id: string) {
+    fireEvent.change(screen.getByLabelText("Speech input provider"), { target: { value: id } });
+  }
+
+  it("Speech input provider dropdown includes OpenAI STT", () => {
+    renderPanel();
+    selectSttProvider("openai");
+    expect(screen.getByLabelText("Speech input provider")).toHaveValue("openai");
+  });
+
+  it("Speech input provider dropdown includes Mistral STT", () => {
+    renderPanel();
+    selectSttProvider("mistral");
+    expect(screen.getByLabelText("Speech input provider")).toHaveValue("mistral");
+  });
+
+  it("Speech input provider dropdown includes xAI STT", () => {
+    renderPanel();
+    selectSttProvider("xai");
+    expect(screen.getByLabelText("Speech input provider")).toHaveValue("xai");
+  });
+
+  it("OpenAI STT shows transcription model dropdown", () => {
+    renderPanel();
+    selectSttProvider("openai");
+    expect(screen.getByRole("combobox", { name: "Transcription model" })).toHaveValue("gpt-4o-transcribe");
+  });
+});
+
 // ── Local model preloading ────────────────────────────────────────────────────
 
 describe("ChatPanel local model preloading", () => {

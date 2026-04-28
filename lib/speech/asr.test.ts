@@ -49,6 +49,50 @@ describe("ASR adapters", () => {
   });
 });
 
+// ── New STT adapters ───────────────────────────────────────────────────────────
+
+describe("new STT adapters", () => {
+  it("calls OpenAI STT with Bearer auth at /audio/transcriptions using multipart form", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ text: "hello world" }));
+    const adapter = createAsrAdapter({ config: { provider: "openai", credential: "sk-key" }, fetch: fetchMock });
+
+    await expect(adapter.transcribe(new Blob(["audio"], { type: "audio/webm" }))).resolves.toMatchObject({
+      text: "hello world"
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.openai.com/v1/audio/transcriptions",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer sk-key" })
+      })
+    );
+    const body = fetchMock.mock.calls[0][1].body as FormData;
+    expect(body.get("model")).toBe("gpt-4o-transcribe");
+  });
+
+  it("calls xAI STT via OpenAI-compatible endpoint with Bearer auth", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ text: "xai heard you" }));
+    const adapter = createAsrAdapter({ config: { provider: "xai", credential: "xai-key" }, fetch: fetchMock });
+
+    await expect(adapter.transcribe(new Blob(["audio"]))).resolves.toMatchObject({ text: "xai heard you" });
+    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.x.ai/v1/audio/transcriptions");
+    expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Bearer xai-key");
+  });
+
+  it("calls Mistral STT via OpenAI-compatible endpoint with Bearer auth", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ text: "mistral heard you" }));
+    const adapter = createAsrAdapter({ config: { provider: "mistral", credential: "mist-key" }, fetch: fetchMock });
+
+    await expect(adapter.transcribe(new Blob(["audio"]))).resolves.toMatchObject({ text: "mistral heard you" });
+    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.mistral.ai/v1/audio/transcriptions");
+    expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Bearer mist-key");
+    const body = opts.body as FormData;
+    expect(body.get("model")).toBe("voxtral-mini-transcribe-realtime-2602");
+  });
+});
+
 function stubAudioContext() {
   class FakeAudioContext {
     constructor(_options?: AudioContextOptions) {}
