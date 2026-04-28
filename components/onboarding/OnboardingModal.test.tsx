@@ -60,9 +60,9 @@ function goToLoadingStep() {
 // ── Welcome screen ────────────────────────────────────────────────────────────
 
 describe("OnboardingModal welcome screen", () => {
-  it("renders the intro text mentioning built-in free configuration", () => {
+  it("renders the intro text mentioning built-in free models", () => {
     renderModal();
-    expect(screen.getByText(/built-in free configuration/i)).toBeInTheDocument();
+    expect(screen.getByText(/built-in free models/i)).toBeInTheDocument();
   });
 
   it("mentions supported providers in the intro text", () => {
@@ -70,9 +70,9 @@ describe("OnboardingModal welcome screen", () => {
     expect(screen.getByText(/openClaw.*chatgpt.*anthropic/i)).toBeInTheDocument();
   });
 
-  it("renders a built-in models button that mentions the download size", () => {
+  it("renders a built-in models button", () => {
     renderModal();
-    expect(screen.getByRole("button", { name: /built-in models.*300mb/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /built-in models/i })).toBeInTheDocument();
   });
 
   it("renders a custom configuration button", () => {
@@ -90,8 +90,8 @@ describe("OnboardingModal welcome screen", () => {
   it("shows loading step when built-in models button is clicked", () => {
     renderModal();
     goToLoadingStep();
-    expect(screen.queryByText(/built-in free configuration/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Gemma/i)).toBeInTheDocument();
+    expect(screen.getByText(/Downloading models/i)).toBeInTheDocument();
+    expect(screen.queryByText(/built-in free models/i)).not.toBeInTheDocument();
   });
 
   it("does not call onUseCustom when built-in models is clicked", () => {
@@ -105,7 +105,7 @@ describe("OnboardingModal welcome screen", () => {
     renderModal();
     goToLlmStep();
     expect(screen.getByRole("heading", { name: /select llm/i })).toBeInTheDocument();
-    expect(screen.queryByText(/built-in free configuration/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/built-in free models/i)).not.toBeInTheDocument();
   });
 });
 
@@ -145,7 +145,8 @@ describe("OnboardingModal loading step", () => {
   it("Continue button is disabled while models are still loading", () => {
     renderModal({ localModelLoadState: loadingLoadState });
     goToLoadingStep();
-    expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+    // While loading, the button shows overall progress % and is disabled
+    expect(screen.getByRole("button", { name: /\d+%/ })).toBeDisabled();
   });
 
   it("Continue button is enabled when all models are ready", () => {
@@ -186,7 +187,7 @@ describe("OnboardingModal LLM step", () => {
     renderModal();
     goToLlmStep();
     fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
-    expect(screen.getByText(/built-in free configuration/i)).toBeInTheDocument();
+    expect(screen.getByText(/built-in free models/i)).toBeInTheDocument();
   });
 
   it("has a Next button that advances to the TTS step", () => {

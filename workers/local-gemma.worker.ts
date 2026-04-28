@@ -39,11 +39,15 @@ workerScope.addEventListener("message", async (event: MessageEvent<WorkerMessage
       return;
     }
     const generatePayload = payload as LocalGemmaWorkerRequest;
+    const onToken = (text: string) => {
+      if (text) workerScope.postMessage({ id, type: "token", text });
+    };
     const output = await generator(formatPromptMessages(generatePayload.messages), {
       max_new_tokens: generatePayload.maxNewTokens ?? 256,
       do_sample: true,
       temperature: 0.7,
-      return_full_text: false
+      return_full_text: false,
+      onToken
     });
     workerScope.postMessage({ id, ok: true, result: extractGeneratedText(output) });
   } catch (caught) {
@@ -75,11 +79,17 @@ async function createGenerator(model: string, onProgress?: (progress: ProgressIn
   });
 }
 
+type TextStreamerCtor = new (
+  tokenizer: unknown,
+  options: { skip_prompt?: boolean; skip_special_tokens?: boolean; callback_function?: (text: string) => void }
+) => unknown;
+
 async function createGemma4Generator(modelId: string, transformers: Record<string, unknown>, onProgress?: (progress: ProgressInfo) => void): Promise<TextGenerator> {
   const AutoProcessor = transformers.AutoProcessor as { from_pretrained(model: string, options?: Record<string, unknown>): Promise<GemmaProcessor> } | undefined;
   const Gemma4ForConditionalGeneration = transformers.Gemma4ForConditionalGeneration as
     | { from_pretrained(model: string, options?: Record<string, unknown>): Promise<Gemma4Model> }
     | undefined;
+  const TextStreamer = transformers.TextStreamer as TextStreamerCtor | undefined;
 
   if (!AutoProcessor || !Gemma4ForConditionalGeneration) {
     throw new Error("Gemma 4 requires a Transformers.js build with Gemma4ForConditionalGeneration support.");
@@ -97,12 +107,38 @@ async function createGemma4Generator(modelId: string, transformers: Record<strin
       tokenize: false
     });
     const inputs = await processor(prompt, undefined, undefined, { add_special_tokens: false });
+
+    // Build a TextStreamer if the API is available and an onToken callback was
+    // provided. Pass the processor's tokenizer if accessible, falling back to
+    // the processor itself. Wrap construction in try-catch so an incompatible
+    // Transformers.js build degrades gracefully to the non-streaming path.
+    const onToken = options.onToken as ((text: string) => void) | undefined;
+    let streamer: unknown = undefined;
+    if (TextStreamer && onToken) {
+      try {
+        const tokenizer = (processor as unknown as { tokenizer?: unknown }).tokenizer ?? processor;
+        streamer = new TextStreamer(tokenizer, {
+          skip_prompt: true,
+          skip_special_tokens: true,
+          callback_function: onToken
+        });
+      } catch {
+        streamer = undefined;
+      }
+    }
+
     const outputs = await model.generate({
       ...inputs,
       max_new_tokens: options.max_new_tokens,
       do_sample: options.do_sample,
-      temperature: options.temperature
+      temperature: options.temperature,
+      ...(streamer ? { streamer } : {})
     });
+
+    // When streaming, tokens were already emitted via callback — return empty so
+    // the caller doesn't double-yield a concatenated string.
+    if (streamer) return "";
+
     const inputLength = getInputLength(inputs);
     const outputTensor = outputs as { slice?: (start: unknown, end: unknown) => unknown };
     const generated = typeof outputTensor?.slice === "function" ? outputTensor.slice(null, [inputLength, null]) : outputs;

@@ -98,17 +98,17 @@ describe("IncrementalSpeechBuffer", () => {
     expect(segments.some((s) => s.includes("return"))).toBe(false);
   });
 
-  it("extracts a soft-boundary segment after 72+ visible chars with whitespace", () => {
+  it("extracts a soft-boundary segment after 256+ visible chars with whitespace", () => {
     const buf = new IncrementalSpeechBuffer();
-    const longText = "a".repeat(73) + " continued text";
+    const longText = "a".repeat(257) + " continued text";
     const segments = buf.ingest(longText, false);
     expect(segments).toHaveLength(1);
-    expect(segments[0].length).toBeGreaterThanOrEqual(73);
+    expect(segments[0].length).toBeGreaterThanOrEqual(257);
   });
 
-  it("does not split below the 72-char soft boundary threshold", () => {
+  it("does not split below the 256-char soft boundary threshold", () => {
     const buf = new IncrementalSpeechBuffer();
-    expect(buf.ingest("a".repeat(50) + " continued", false)).toEqual([]);
+    expect(buf.ingest("a".repeat(200) + " continued", false)).toEqual([]);
   });
 
   it("flushes remaining text when isFinal is true", () => {

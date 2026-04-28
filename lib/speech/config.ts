@@ -8,7 +8,7 @@ export function normalizeTtsConfig(config: TtsConfig): Required<TtsConfig> {
       voice: config.voice ?? "af_bella",
       dtype: config.dtype ?? "fp32",
       device: config.device ?? "webgpu",
-      speed: config.speed ?? 1
+      speed: config.speed ?? 1.2
     } as Required<TtsConfig>;
   }
 

@@ -10,7 +10,7 @@ describe("speech provider config", () => {
       model: "onnx-community/Kokoro-82M-v1.0-ONNX",
       device: "webgpu",
       dtype: "fp32",
-      speed: 1
+      speed: 1.2
     });
 
     expect(normalizeAsrConfig({ provider: "distil-whisper" })).toMatchObject({

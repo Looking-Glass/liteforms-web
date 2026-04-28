@@ -73,48 +73,30 @@ function renderPanel(overrides: Partial<CharacterConfig> = {}) {
   return { onCharacterChange, onModelUrlChange };
 }
 
-function switchToCharacterTab() {
-  fireEvent.click(screen.getByRole("button", { name: "Character" }));
-}
+// ── Collapsible sections ─────────────────────────────────────────────────────
 
-// ── Tab bar ─────────────────────────────────────────────────────────────────
-
-describe("ChatPanel tab bar", () => {
-  it("renders Settings and Character tabs", () => {
+describe("ChatPanel collapsible sections", () => {
+  it("renders Character and Settings section headers", () => {
     renderPanel();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Character" })).toBeInTheDocument();
+    expect(screen.getByText("Character", { selector: "summary" })).toBeInTheDocument();
+    expect(screen.getByText("Settings", { selector: "summary" })).toBeInTheDocument();
   });
 
-  it("shows Settings tab content by default", () => {
+  it("shows character fields and settings fields without any interaction", () => {
     renderPanel();
-    expect(screen.getByLabelText("Model settings")).toBeInTheDocument();
-    expect(screen.getByLabelText("Speech settings")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Character settings")).not.toBeInTheDocument();
-  });
-
-  it("switches to Character tab on click", () => {
-    renderPanel();
-    switchToCharacterTab();
-    expect(screen.getByLabelText("Character settings")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Model settings")).not.toBeInTheDocument();
-  });
-
-  it("switches back to Settings tab on click", () => {
-    renderPanel();
-    switchToCharacterTab();
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
-    expect(screen.getByLabelText("Model settings")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Character settings")).not.toBeInTheDocument();
+    // Character section is open by default
+    expect(screen.getByPlaceholderText("Character name")).toBeInTheDocument();
+    // Settings fields are accessible in the DOM even when section is collapsed
+    expect(screen.getByLabelText("Model provider")).toBeInTheDocument();
+    expect(screen.getByLabelText("Voice provider")).toBeInTheDocument();
   });
 });
 
 // ── Character form ───────────────────────────────────────────────────────────
 
 describe("ChatPanel character form", () => {
-  it("shows name, pronouns, and personality fields in the Character tab", () => {
+  it("shows name, pronouns, and personality fields (Character section is open by default)", () => {
     renderPanel();
-    switchToCharacterTab();
     expect(screen.getByPlaceholderText("Character name")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Pronouns" })).toHaveValue("THEY");
     expect(screen.getByPlaceholderText(/personality/i)).toBeInTheDocument();
@@ -122,14 +104,12 @@ describe("ChatPanel character form", () => {
 
   it("populates fields with the current character values", () => {
     renderPanel();
-    switchToCharacterTab();
     expect(screen.getByDisplayValue(defaultCharacter.name)).toBeInTheDocument();
     expect(screen.getByDisplayValue(defaultCharacter.personality)).toBeInTheDocument();
   });
 
   it("calls onCharacterChange when name is edited", () => {
     const { onCharacterChange } = renderPanel();
-    switchToCharacterTab();
     const nameInput = screen.getByPlaceholderText("Character name") as HTMLInputElement;
     fireEvent.change(nameInput, { target: { value: "Nova" } });
     expect(onCharacterChange).toHaveBeenCalledWith(expect.objectContaining({ name: "Nova" }));
@@ -137,7 +117,6 @@ describe("ChatPanel character form", () => {
 
   it("calls onCharacterChange when pronouns are changed", () => {
     const { onCharacterChange } = renderPanel();
-    switchToCharacterTab();
     const select = screen.getByRole("combobox", { name: "Pronouns" }) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "SHE" } });
     expect(onCharacterChange).toHaveBeenCalledWith(expect.objectContaining({ pronouns: "SHE" }));
@@ -145,7 +124,6 @@ describe("ChatPanel character form", () => {
 
   it("calls onCharacterChange when personality is edited", () => {
     const { onCharacterChange } = renderPanel();
-    switchToCharacterTab();
     const textarea = screen.getByPlaceholderText(/personality/i) as HTMLTextAreaElement;
     fireEvent.change(textarea, { target: { value: "A bold adventurer." } });
     expect(onCharacterChange).toHaveBeenCalledWith(
@@ -157,21 +135,18 @@ describe("ChatPanel character form", () => {
 // ── VRM loader ───────────────────────────────────────────────────────────────
 
 describe("ChatPanel VRM loader", () => {
-  it("shows a Load VRM button in the Character tab", () => {
+  it("shows a Load VRM button in the Character section", () => {
     renderPanel();
-    switchToCharacterTab();
     expect(screen.getByRole("button", { name: "Load VRM" })).toBeInTheDocument();
   });
 
   it("shows default lobster model text before any VRM is loaded", () => {
     renderPanel();
-    switchToCharacterTab();
-    expect(screen.getByText("Using default (lobster)")).toBeInTheDocument();
+    expect(screen.getByText("Default (lobster)")).toBeInTheDocument();
   });
 
   it("calls onModelUrlChange and shows filename when a VRM file is selected", () => {
     const { onModelUrlChange } = renderPanel();
-    switchToCharacterTab();
 
     const stubUrl = "blob:http://localhost/stub-vrm";
     vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn().mockReturnValue(stubUrl) });
@@ -195,7 +170,6 @@ describe("ChatPanel OpenClaw persona handling", () => {
     renderPanel();
     const providerSelect = screen.getByLabelText("Model provider") as HTMLSelectElement;
     fireEvent.change(providerSelect, { target: { value: "openclaw" } });
-    switchToCharacterTab();
     expect(screen.queryByPlaceholderText("Character name")).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/personality/i)).not.toBeInTheDocument();
   });
@@ -204,17 +178,14 @@ describe("ChatPanel OpenClaw persona handling", () => {
     renderPanel();
     const providerSelect = screen.getByLabelText("Model provider") as HTMLSelectElement;
     fireEvent.change(providerSelect, { target: { value: "openclaw" } });
-    switchToCharacterTab();
     expect(screen.getByText(/OpenClaw.*soul system/i)).toBeInTheDocument();
   });
 
   it("restores character fields when switching away from OpenClaw", () => {
     renderPanel();
-    // Change provider in Settings tab, then verify Character tab reflects the change.
     const providerSelect = screen.getByLabelText("Model provider") as HTMLSelectElement;
     fireEvent.change(providerSelect, { target: { value: "openclaw" } });
     fireEvent.change(providerSelect, { target: { value: "openai" } });
-    switchToCharacterTab();
     expect(screen.getByPlaceholderText("Character name")).toBeInTheDocument();
   });
 });
@@ -229,7 +200,7 @@ describe("ChatPanel chat interface", () => {
 
   it("renders the message composer input and send button", () => {
     renderPanel();
-    expect(screen.getByPlaceholderText("Type a message")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Type a message…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
   });
 });
@@ -276,10 +247,16 @@ describe("mic auto-submit flow", () => {
       writable: true,
       configurable: true
     });
+
+    // jsdom doesn't support setPointerCapture for synthetic events; stub it out
+    // so onPointerDown can proceed to startMicRecording.
+    HTMLElement.prototype.setPointerCapture = vi.fn();
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    // @ts-expect-error restoring prototype method
+    delete HTMLElement.prototype.setPointerCapture;
   });
 
   it("calls streamText with the transcribed text when mic recording stops", async () => {
@@ -289,8 +266,8 @@ describe("mic auto-submit flow", () => {
 
     renderPanel();
 
-    fireEvent.click(screen.getByRole("button", { name: "Mic" }));
-    await waitFor(() => screen.getByRole("button", { name: "Stop mic" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
+    await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
 
     capturedRecorder!.stop();
 
@@ -313,8 +290,8 @@ describe("mic auto-submit flow", () => {
 
     renderPanel();
 
-    fireEvent.click(screen.getByRole("button", { name: "Mic" }));
-    await waitFor(() => screen.getByRole("button", { name: "Stop mic" }));
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
+    await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
 
     capturedRecorder!.stop();
 
@@ -364,32 +341,7 @@ describe("ChatPanel Settings model dropdown", () => {
     expect(screen.getByLabelText("Model provider")).toHaveValue("together");
   });
 
-  // ── Model dropdown vs text input ────────────────────────────────────────
-
-  it("shows a model dropdown for Anthropic (provider with known models)", () => {
-    renderPanel();
-    selectProvider("anthropic");
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
-  });
-
-  it("shows a model dropdown for Google AI Studio", () => {
-    renderPanel();
-    selectProvider("google");
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
-  });
-
-  it("shows a model dropdown for xAI", () => {
-    renderPanel();
-    selectProvider("xai");
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
-  });
-
-  it("shows a model dropdown for Mistral AI", () => {
-    renderPanel();
-    selectProvider("mistral");
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
-  });
+  // ── Model input (Advanced section always shows free-text input) ────────────
 
   it("shows a free-text model input for Ollama (dynamic models)", () => {
     renderPanel();
@@ -410,68 +362,41 @@ describe("ChatPanel Settings model dropdown", () => {
     expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
   });
 
-  // ── Default models ──────────────────────────────────────────────────────
+  // ── Default models (shown in Advanced section model text input) ────────────
 
   it("OpenAI defaults to gpt-5.5", () => {
     renderPanel();
     selectProvider("openai");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.5");
+    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("gpt-5.5");
   });
 
   it("Anthropic defaults to claude-opus-4-7", () => {
     renderPanel();
     selectProvider("anthropic");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("claude-opus-4-7");
+    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("claude-opus-4-7");
   });
 
   it("Google defaults to gemini-3.1-pro-preview", () => {
     renderPanel();
     selectProvider("google");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gemini-3.1-pro-preview");
+    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("gemini-3.1-pro-preview");
   });
 
   it("xAI defaults to grok-4", () => {
     renderPanel();
     selectProvider("xai");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("grok-4");
-  });
-
-  // ── Key model options ───────────────────────────────────────────────────
-
-  it("Anthropic model dropdown includes claude-sonnet-4-5", () => {
-    renderPanel();
-    selectProvider("anthropic");
-    expect(screen.getByRole("option", { name: /claude sonnet 4\.5/i })).toBeInTheDocument();
-  });
-
-  it("Google model dropdown includes gemini-2.5-pro", () => {
-    renderPanel();
-    selectProvider("google");
-    expect(screen.getByRole("option", { name: /gemini 2\.5 pro/i })).toBeInTheDocument();
-  });
-
-  it("xAI model dropdown includes grok-4-fast", () => {
-    renderPanel();
-    selectProvider("xai");
-    expect(screen.getByRole("option", { name: /grok 4 fast$/i })).toBeInTheDocument();
-  });
-
-  it("Mistral model dropdown includes mistral-small-latest", () => {
-    renderPanel();
-    selectProvider("mistral");
-    expect(screen.getByRole("option", { name: /mistral small/i })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("grok-4");
   });
 
   // ── Config integration ──────────────────────────────────────────────────
 
-  it("changing the model dropdown updates the active model", async () => {
+  it("editing the model text input updates the active model", async () => {
     renderPanel();
     selectProvider("anthropic");
-    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Model" }), {
       target: { value: "claude-sonnet-4-5" }
     });
-    // Submit a message and verify the adapter is called with the updated model
-    const input = screen.getByPlaceholderText("Type a message");
+    const input = screen.getByPlaceholderText("Type a message…");
     fireEvent.change(input, { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => {
@@ -515,29 +440,16 @@ describe("ChatPanel Settings TTS dropdown", () => {
     expect(screen.getByLabelText("Voice provider")).toHaveValue("minimax");
   });
 
-  it("OpenAI TTS shows voice dropdown with static voice list", () => {
+  it("non-Kokoro TTS provider shows a Voice API key field", () => {
     renderPanel();
-    selectTtsProvider("openai");
-    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("coral");
-    expect(screen.getByRole("combobox", { name: "Voice model" })).toHaveValue("gpt-4o-mini-tts");
+    selectTtsProvider("elevenlabs");
+    expect(screen.getByLabelText("Voice API key")).toBeInTheDocument();
   });
 
-  it("Google TTS shows voice dropdown with Kore as default", () => {
+  it("Kokoro TTS does not show a Voice API key field", () => {
     renderPanel();
-    selectTtsProvider("google");
-    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("Kore");
-  });
-
-  it("xAI TTS shows voice dropdown", () => {
-    renderPanel();
-    selectTtsProvider("xai");
-    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("eve");
-  });
-
-  it("Deepgram TTS shows voice text input (dynamic)", () => {
-    renderPanel();
-    selectTtsProvider("deepgram");
-    expect(screen.getByRole("textbox", { name: "Voice" })).toBeInTheDocument();
+    // Kokoro is the default; confirm no API key field
+    expect(screen.queryByLabelText("Voice API key")).not.toBeInTheDocument();
   });
 });
 
@@ -569,7 +481,7 @@ describe("ChatPanel streaming TTS pipeline", () => {
     vi.mocked(createTtsAdapter).mockReturnValueOnce({ synthesize, provider: "kokoro" });
 
     renderPanel();
-    fireEvent.change(screen.getByPlaceholderText("Type a message"), { target: { value: "hi" } });
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     // Synthesis of the first sentence should start before the stream ends
@@ -605,7 +517,7 @@ describe("ChatPanel streaming TTS pipeline", () => {
     vi.mocked(createTtsAdapter).mockReturnValueOnce({ synthesize, provider: "kokoro" });
 
     renderPanel();
-    fireEvent.change(screen.getByPlaceholderText("Type a message"), { target: { value: "hi" } });
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
@@ -631,7 +543,7 @@ describe("ChatPanel streaming TTS pipeline", () => {
     vi.mocked(createTtsAdapter).mockReturnValueOnce({ synthesize, provider: "kokoro" });
 
     renderPanel();
-    fireEvent.change(screen.getByPlaceholderText("Type a message"), { target: { value: "hi" } });
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     await waitFor(() => {
@@ -641,33 +553,27 @@ describe("ChatPanel streaming TTS pipeline", () => {
   });
 });
 
-describe("ChatPanel Settings STT dropdown", () => {
-  function selectSttProvider(id: string) {
-    fireEvent.change(screen.getByLabelText("Speech input provider"), { target: { value: id } });
+describe("ChatPanel Mic input dropdown", () => {
+  function selectMicProvider(id: string) {
+    fireEvent.change(screen.getByLabelText("Mic input"), { target: { value: id } });
   }
 
-  it("Speech input provider dropdown includes OpenAI STT", () => {
+  it("Mic input dropdown includes Deepgram", () => {
     renderPanel();
-    selectSttProvider("openai");
-    expect(screen.getByLabelText("Speech input provider")).toHaveValue("openai");
+    selectMicProvider("deepgram");
+    expect(screen.getByLabelText("Mic input")).toHaveValue("deepgram");
   });
 
-  it("Speech input provider dropdown includes Mistral STT", () => {
+  it("Mic input dropdown includes ElevenLabs STT", () => {
     renderPanel();
-    selectSttProvider("mistral");
-    expect(screen.getByLabelText("Speech input provider")).toHaveValue("mistral");
+    selectMicProvider("elevenlabs");
+    expect(screen.getByLabelText("Mic input")).toHaveValue("elevenlabs");
   });
 
-  it("Speech input provider dropdown includes xAI STT", () => {
+  it("Deepgram Mic input shows a Transcription API key field", () => {
     renderPanel();
-    selectSttProvider("xai");
-    expect(screen.getByLabelText("Speech input provider")).toHaveValue("xai");
-  });
-
-  it("OpenAI STT shows transcription model dropdown", () => {
-    renderPanel();
-    selectSttProvider("openai");
-    expect(screen.getByRole("combobox", { name: "Transcription model" })).toHaveValue("gpt-4o-transcribe");
+    selectMicProvider("deepgram");
+    expect(screen.getByLabelText("Transcription API key")).toBeInTheDocument();
   });
 });
 
