@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 import { createLlmAdapter } from "./adapters";
 import type { BaseProviderConfig } from "./types";
 
@@ -82,7 +82,11 @@ describe("LLM adapters", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.anthropic.com/v1/messages",
       expect.objectContaining({
-        headers: expect.objectContaining({ "x-api-key": "ant", "anthropic-version": "2023-06-01" })
+        headers: expect.objectContaining({
+          "x-api-key": "ant",
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        })
       })
     );
   });
@@ -96,5 +100,81 @@ describe("LLM adapters", () => {
       "Local"
     );
     expect(fetchMock).toHaveBeenCalledWith("http://localhost:11434/api/chat", expect.objectContaining({ method: "POST" }));
+  });
+
+  describe("cloud provider proxy routing", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("routes cloud providers through /api/llm/stream proxy when no custom fetch is provided", async () => {
+      const proxyFetchMock = vi.fn(async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("Proxied response"));
+              controller.close();
+            }
+          })
+        )
+      );
+      vi.stubGlobal("fetch", proxyFetchMock);
+
+      const config: BaseProviderConfig = { provider: "anthropic", model: "claude-3-5-sonnet-latest", credential: "ant" };
+      const adapter = createLlmAdapter({ config });
+
+      await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+        "Proxied response"
+      );
+
+      expect(proxyFetchMock).toHaveBeenCalledWith(
+        "/api/llm/stream",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"provider":"anthropic"')
+        })
+      );
+    });
+
+    it("routes openai through proxy when no custom fetch is provided", async () => {
+      const proxyFetchMock = vi.fn(async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("OpenAI proxied"));
+              controller.close();
+            }
+          })
+        )
+      );
+      vi.stubGlobal("fetch", proxyFetchMock);
+
+      const config: BaseProviderConfig = { provider: "openai", model: "gpt-4.1-mini", credential: "sk-test" };
+      const adapter = createLlmAdapter({ config });
+
+      await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+        "OpenAI proxied"
+      );
+
+      expect(proxyFetchMock).toHaveBeenCalledWith(
+        "/api/llm/stream",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    it("does NOT proxy local providers (ollama) even without custom fetch", async () => {
+      const localFetchMock = vi.fn(async () => streamResponse(['{"message":{"content":"Local direct"}}\n']));
+      vi.stubGlobal("fetch", localFetchMock);
+
+      const config: BaseProviderConfig = { provider: "ollama", model: "llama3.2" };
+      const adapter = createLlmAdapter({ config });
+
+      await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+        "Local direct"
+      );
+
+      expect(localFetchMock).toHaveBeenCalledWith(
+        "http://localhost:11434/api/chat",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
   });
 });

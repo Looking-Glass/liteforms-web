@@ -12,9 +12,17 @@ type CreateAdapterInput = {
   localGemmaWorker?: LocalGemmaWorkerLike;
 };
 
+/** Cloud providers whose APIs block direct browser requests due to CORS. */
+const CLOUD_PROVIDER_IDS = new Set<string>([
+  "openai", "anthropic", "google", "xai", "mistral",
+  "cerebras", "nvidia", "openrouter", "groq", "together", "fireworks", "qwen"
+]);
+
 export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
   const config = normalizeProviderConfig(input.config);
   const fetchImpl = input.fetch ?? fetch;
+  // When no custom fetch is injected, assume browser context: route cloud providers through proxy
+  const useProxy = !input.fetch;
 
   if (config.provider === "openclaw") {
     return createOpenClawAdapter(config, input.webSocketFactory);
@@ -24,6 +32,11 @@ export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
     id: config.provider,
     streamText(request) {
       const normalizedRequest = { ...request, config: normalizeProviderConfig(request.config) };
+
+      if (useProxy && CLOUD_PROVIDER_IDS.has(normalizedRequest.config.provider)) {
+        return streamViaProxy(normalizedRequest, fetchImpl);
+      }
+
       if (normalizedRequest.config.provider === "anthropic") {
         return streamAnthropic(normalizedRequest, fetchImpl);
       }
@@ -36,6 +49,25 @@ export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
       return streamOpenAiCompatible(normalizedRequest, fetchImpl);
     }
   };
+}
+
+async function* streamViaProxy(request: ChatRequest, fetchImpl: FetchLike): AsyncIterable<string> {
+  const response = await fetchImpl("/api/llm/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request)
+  });
+  if (!response.ok) {
+    throw new Error(`LLM proxy request failed with ${response.status}`);
+  }
+  if (!response.body) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    yield decoder.decode(value, { stream: true });
+  }
 }
 
 async function* streamOpenAiCompatible(request: ChatRequest, fetchImpl: FetchLike): AsyncIterable<string> {
@@ -77,7 +109,9 @@ async function* streamAnthropic(request: ChatRequest, fetchImpl: FetchLike): Asy
     headers: {
       "Content-Type": "application/json",
       "x-api-key": config.credential ?? "",
-      "anthropic-version": "2023-06-01"
+      "anthropic-version": "2023-06-01",
+      // Anthropic's opt-in header allowing server-side and browser direct access
+      "anthropic-dangerous-direct-browser-access": "true"
     },
     body: JSON.stringify({
       model: config.model,
