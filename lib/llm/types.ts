@@ -7,7 +7,16 @@ export type LlmProviderId =
   | "openrouter"
   | "ollama"
   | "lmstudio"
-  | "openclaw";
+  | "openclaw"
+  | "google"
+  | "xai"
+  | "mistral"
+  | "cerebras"
+  | "nvidia"
+  | "groq"
+  | "together"
+  | "fireworks"
+  | "qwen";
 
 export type ChatRole = "system" | "user" | "assistant";
 

@@ -10,7 +10,16 @@ const defaultBaseUrls = {
   openrouter: "https://openrouter.ai/api/v1",
   ollama: "http://localhost:11434",
   lmstudio: "http://localhost:1234/v1",
-  openclaw: "ws://127.0.0.1:18789"
+  openclaw: "ws://127.0.0.1:18789",
+  google: "https://generativelanguage.googleapis.com/v1beta/openai",
+  xai: "https://api.x.ai/v1",
+  mistral: "https://api.mistral.ai/v1",
+  cerebras: "https://api.cerebras.ai/v1",
+  nvidia: "https://integrate.api.nvidia.com/v1",
+  groq: "https://api.groq.com/openai/v1",
+  together: "https://api.together.xyz/v1",
+  fireworks: "https://api.fireworks.ai/inference/v1",
+  qwen: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 } satisfies Record<BaseProviderConfig["provider"], string | undefined>;
 
 const defaultEndpointModes = {
@@ -22,7 +31,16 @@ const defaultEndpointModes = {
   openrouter: "openai-compatible",
   ollama: "native",
   lmstudio: "openai-compatible",
-  openclaw: "native"
+  openclaw: "native",
+  google: "openai-compatible",
+  xai: "openai-compatible",
+  mistral: "openai-compatible",
+  cerebras: "openai-compatible",
+  nvidia: "openai-compatible",
+  groq: "openai-compatible",
+  together: "openai-compatible",
+  fireworks: "openai-compatible",
+  qwen: "openai-compatible"
 } satisfies Record<BaseProviderConfig["provider"], NonNullable<BaseProviderConfig["endpointMode"]>>;
 
 const liteformsProxyPattern = /(^\/api\/|liteforms\/llm|\/api\/liteforms|\/api\/llm)/i;
@@ -38,7 +56,16 @@ export const providerConfigSchema = z
       "openrouter",
       "ollama",
       "lmstudio",
-      "openclaw"
+      "openclaw",
+      "google",
+      "xai",
+      "mistral",
+      "cerebras",
+      "nvidia",
+      "groq",
+      "together",
+      "fireworks",
+      "qwen"
     ]),
     model: z.string().trim().min(1),
     credential: z.string().optional(),
@@ -83,6 +110,15 @@ export function getProviderLabel(provider: BaseProviderConfig["provider"]) {
     openrouter: "OpenRouter",
     ollama: "Ollama",
     lmstudio: "LM Studio",
-    openclaw: "OpenClaw Gateway"
+    openclaw: "OpenClaw Gateway",
+    google: "Google AI Studio",
+    xai: "xAI (Grok)",
+    mistral: "Mistral AI",
+    cerebras: "Cerebras",
+    nvidia: "NVIDIA",
+    groq: "Groq",
+    together: "Together AI",
+    fireworks: "Fireworks",
+    qwen: "Qwen Cloud"
   }[provider];
 }

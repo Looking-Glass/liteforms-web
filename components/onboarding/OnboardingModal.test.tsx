@@ -351,6 +351,235 @@ describe("OnboardingModal STT step", () => {
   });
 });
 
+// ── LLM model dropdown ────────────────────────────────────────────────────────
+
+describe("OnboardingModal LLM model selection", () => {
+  function goToLlmAndSelectProvider(providerId: string) {
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: providerId }
+    });
+  }
+
+  // ── Dropdown vs text input ────────────────────────────────────────────────
+
+  it("shows a model dropdown for Anthropic (provider with known models)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("anthropic");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows a model dropdown for OpenAI (provider with known models)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("openai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows a model dropdown for ChatGPT connector (provider with known models)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("chatgpt-subscription");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("shows a model dropdown for Claude connector (provider with known models)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("claude-subscription");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("shows a free-text model input for Ollama (dynamic local models)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("ollama");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows a free-text model input for OpenRouter (dynamic gateway)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("openrouter");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows a free-text model input for LM Studio (dynamic local models)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("lmstudio");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  // ── Anthropic models ──────────────────────────────────────────────────────
+
+  it("Anthropic model dropdown includes claude-opus-4-7", () => {
+    renderModal();
+    goToLlmAndSelectProvider("anthropic");
+    expect(screen.getByRole("option", { name: /claude opus 4\.7/i })).toBeInTheDocument();
+  });
+
+  it("Anthropic model dropdown includes claude-opus-4-5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("anthropic");
+    expect(screen.getByRole("option", { name: /claude opus 4\.5/i })).toBeInTheDocument();
+  });
+
+  it("Anthropic model dropdown includes claude-sonnet-4-6", () => {
+    renderModal();
+    goToLlmAndSelectProvider("anthropic");
+    expect(screen.getByRole("option", { name: /claude sonnet 4\.6/i })).toBeInTheDocument();
+  });
+
+  it("Anthropic model dropdown includes claude-sonnet-4-5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("anthropic");
+    expect(screen.getByRole("option", { name: /claude sonnet 4\.5/i })).toBeInTheDocument();
+  });
+
+  it("Anthropic model dropdown includes claude-haiku-4-5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("anthropic");
+    expect(screen.getByRole("option", { name: /claude haiku 4\.5/i })).toBeInTheDocument();
+  });
+
+  it("Anthropic model dropdown includes claude-haiku-3-5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("anthropic");
+    expect(screen.getByRole("option", { name: /claude haiku 3\.5/i })).toBeInTheDocument();
+  });
+
+  it("Anthropic defaults to claude-opus-4-7", () => {
+    renderModal();
+    goToLlmAndSelectProvider("anthropic");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("claude-opus-4-7");
+  });
+
+  // ── OpenAI models ─────────────────────────────────────────────────────────
+
+  it("OpenAI model dropdown includes gpt-5.5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("openai");
+    expect(screen.getByRole("option", { name: /gpt-5\.5$/i })).toBeInTheDocument();
+  });
+
+  it("OpenAI model dropdown includes gpt-5.5-pro", () => {
+    renderModal();
+    goToLlmAndSelectProvider("openai");
+    expect(screen.getByRole("option", { name: /gpt-5\.5 pro/i })).toBeInTheDocument();
+  });
+
+  it("OpenAI model dropdown includes gpt-5.4", () => {
+    renderModal();
+    goToLlmAndSelectProvider("openai");
+    expect(screen.getByRole("option", { name: /gpt-5\.4$/i })).toBeInTheDocument();
+  });
+
+  it("OpenAI model dropdown includes gpt-5.4-mini", () => {
+    renderModal();
+    goToLlmAndSelectProvider("openai");
+    expect(screen.getByRole("option", { name: /gpt-5\.4 mini/i })).toBeInTheDocument();
+  });
+
+  it("OpenAI model dropdown includes gpt-5.4-nano", () => {
+    renderModal();
+    goToLlmAndSelectProvider("openai");
+    expect(screen.getByRole("option", { name: /gpt-5\.4 nano/i })).toBeInTheDocument();
+  });
+
+  it("OpenAI defaults to gpt-5.5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("openai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.5");
+  });
+
+  // ── ChatGPT connector models ──────────────────────────────────────────────
+
+  it("ChatGPT connector model dropdown includes gpt-5.5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("chatgpt-subscription");
+    expect(screen.getByRole("option", { name: /gpt-5\.5$/i })).toBeInTheDocument();
+  });
+
+  it("ChatGPT connector model dropdown includes gpt-5.5-pro", () => {
+    renderModal();
+    goToLlmAndSelectProvider("chatgpt-subscription");
+    expect(screen.getByRole("option", { name: /gpt-5\.5 pro/i })).toBeInTheDocument();
+  });
+
+  it("ChatGPT connector model dropdown includes gpt-5.4", () => {
+    renderModal();
+    goToLlmAndSelectProvider("chatgpt-subscription");
+    expect(screen.getByRole("option", { name: /gpt-5\.4$/i })).toBeInTheDocument();
+  });
+
+  it("ChatGPT connector model dropdown includes gpt-5.4-pro", () => {
+    renderModal();
+    goToLlmAndSelectProvider("chatgpt-subscription");
+    expect(screen.getByRole("option", { name: /gpt-5\.4 pro/i })).toBeInTheDocument();
+  });
+
+  it("ChatGPT connector defaults to gpt-5.5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("chatgpt-subscription");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.5");
+  });
+
+  // ── Claude connector models ───────────────────────────────────────────────
+
+  it("Claude connector model dropdown includes claude-opus-4-7", () => {
+    renderModal();
+    goToLlmAndSelectProvider("claude-subscription");
+    expect(screen.getByRole("option", { name: /claude opus 4\.7/i })).toBeInTheDocument();
+  });
+
+  it("Claude connector model dropdown includes claude-sonnet-4-5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("claude-subscription");
+    expect(screen.getByRole("option", { name: /claude sonnet 4\.5/i })).toBeInTheDocument();
+  });
+
+  it("Claude connector model dropdown includes claude-haiku-4-5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("claude-subscription");
+    expect(screen.getByRole("option", { name: /claude haiku 4\.5/i })).toBeInTheDocument();
+  });
+
+  // ── Config integration ────────────────────────────────────────────────────
+
+  it("changing the Anthropic model dropdown updates the submitted config", () => {
+    const onUseCustom = vi.fn();
+    renderModal({ onUseCustom });
+    goToLlmAndSelectProvider("anthropic");
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
+      target: { value: "claude-sonnet-4-5" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start liteforms/i }));
+    expect(onUseCustom).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "anthropic", model: "claude-sonnet-4-5" }),
+      expect.anything(),
+      expect.anything()
+    );
+  });
+
+  it("changing the OpenAI model dropdown updates the submitted config", () => {
+    const onUseCustom = vi.fn();
+    renderModal({ onUseCustom });
+    goToLlmAndSelectProvider("openai");
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
+      target: { value: "gpt-5.4-mini" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /start liteforms/i }));
+    expect(onUseCustom).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "openai", model: "gpt-5.4-mini" }),
+      expect.anything(),
+      expect.anything()
+    );
+  });
+});
+
 // ── ElevenLabs credential sharing ─────────────────────────────────────────────
 
 describe("OnboardingModal ElevenLabs credential sharing", () => {
@@ -381,5 +610,212 @@ describe("OnboardingModal ElevenLabs credential sharing", () => {
       target: { value: "elevenlabs" }
     });
     expect(screen.getByLabelText(/transcription credential/i)).toHaveValue("");
+  });
+});
+
+// ── New cloud providers ────────────────────────────────────────────────────────
+
+describe("OnboardingModal new cloud provider options", () => {
+  function goToLlmAndSelectProvider(providerId: string) {
+    fireEvent.click(screen.getByRole("button", { name: /custom configuration/i }));
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: providerId }
+    });
+  }
+
+  // ── Provider options exist ────────────────────────────────────────────────
+
+  it("Google AI Studio appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("google");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("google");
+  });
+
+  it("xAI (Grok) appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("xai");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("xai");
+  });
+
+  it("Mistral AI appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("mistral");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("mistral");
+  });
+
+  it("Cerebras appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("cerebras");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("cerebras");
+  });
+
+  it("NVIDIA appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("nvidia");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("nvidia");
+  });
+
+  it("Groq appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("groq");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("groq");
+  });
+
+  it("Together AI appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("together");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("together");
+  });
+
+  it("Fireworks appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("fireworks");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("fireworks");
+  });
+
+  it("Qwen Cloud appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("qwen");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("qwen");
+  });
+
+  // ── Model dropdowns for providers with static catalogs ────────────────────
+
+  it("Google shows a model dropdown", () => {
+    renderModal();
+    goToLlmAndSelectProvider("google");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("xAI shows a model dropdown", () => {
+    renderModal();
+    goToLlmAndSelectProvider("xai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("Mistral shows a model dropdown", () => {
+    renderModal();
+    goToLlmAndSelectProvider("mistral");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("Cerebras shows a model dropdown", () => {
+    renderModal();
+    goToLlmAndSelectProvider("cerebras");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("NVIDIA shows a model dropdown", () => {
+    renderModal();
+    goToLlmAndSelectProvider("nvidia");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("Groq shows a free-text model input (dynamic models)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("groq");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("Together AI shows a free-text model input", () => {
+    renderModal();
+    goToLlmAndSelectProvider("together");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("Fireworks shows a free-text model input", () => {
+    renderModal();
+    goToLlmAndSelectProvider("fireworks");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  it("Qwen Cloud shows a free-text model input", () => {
+    renderModal();
+    goToLlmAndSelectProvider("qwen");
+    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  // ── Default models ────────────────────────────────────────────────────────
+
+  it("Google defaults to gemini-3.1-pro-preview", () => {
+    renderModal();
+    goToLlmAndSelectProvider("google");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gemini-3.1-pro-preview");
+  });
+
+  it("xAI defaults to grok-4", () => {
+    renderModal();
+    goToLlmAndSelectProvider("xai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("grok-4");
+  });
+
+  it("Mistral defaults to mistral-large-latest", () => {
+    renderModal();
+    goToLlmAndSelectProvider("mistral");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("mistral-large-latest");
+  });
+
+  it("Cerebras defaults to gpt-oss-120b", () => {
+    renderModal();
+    goToLlmAndSelectProvider("cerebras");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-oss-120b");
+  });
+
+  it("NVIDIA defaults to nvidia/nemotron-3-super-120b-a12b", () => {
+    renderModal();
+    goToLlmAndSelectProvider("nvidia");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("nvidia/nemotron-3-super-120b-a12b");
+  });
+
+  // ── Key models in static catalogs ─────────────────────────────────────────
+
+  it("Google model dropdown includes gemini-2.5-pro", () => {
+    renderModal();
+    goToLlmAndSelectProvider("google");
+    expect(screen.getByRole("option", { name: /gemini 2\.5 pro/i })).toBeInTheDocument();
+  });
+
+  it("Google model dropdown includes gemini-3-flash-preview", () => {
+    renderModal();
+    goToLlmAndSelectProvider("google");
+    expect(screen.getByRole("option", { name: /gemini 3 flash/i })).toBeInTheDocument();
+  });
+
+  it("xAI model dropdown includes grok-4-fast", () => {
+    renderModal();
+    goToLlmAndSelectProvider("xai");
+    expect(screen.getByRole("option", { name: /grok 4 fast$/i })).toBeInTheDocument();
+  });
+
+  it("xAI model dropdown includes grok-3", () => {
+    renderModal();
+    goToLlmAndSelectProvider("xai");
+    expect(screen.getByRole("option", { name: /^grok 3$/i })).toBeInTheDocument();
+  });
+
+  it("Mistral model dropdown includes mistral-small-latest", () => {
+    renderModal();
+    goToLlmAndSelectProvider("mistral");
+    expect(screen.getByRole("option", { name: /mistral small/i })).toBeInTheDocument();
+  });
+
+  it("Mistral model dropdown includes codestral-latest", () => {
+    renderModal();
+    goToLlmAndSelectProvider("mistral");
+    expect(screen.getByRole("option", { name: /codestral/i })).toBeInTheDocument();
+  });
+
+  it("Cerebras model dropdown includes llama3.1-8b", () => {
+    renderModal();
+    goToLlmAndSelectProvider("cerebras");
+    expect(screen.getByRole("option", { name: /llama 3\.1 8b/i })).toBeInTheDocument();
+  });
+
+  it("NVIDIA model dropdown includes kimi-k2.5", () => {
+    renderModal();
+    goToLlmAndSelectProvider("nvidia");
+    expect(screen.getByRole("option", { name: /kimi k2\.5/i })).toBeInTheDocument();
   });
 });

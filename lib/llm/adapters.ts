@@ -207,7 +207,10 @@ async function* readTextStream(response: Response, parser: (line: string) => str
 }
 
 export function providerNeedsCredential(config: BaseProviderConfig) {
-  return ["openai", "chatgpt-subscription", "anthropic", "claude-subscription", "openrouter"].includes(config.provider);
+  return [
+    "openai", "chatgpt-subscription", "anthropic", "claude-subscription", "openrouter", "openclaw",
+    "google", "xai", "mistral", "cerebras", "nvidia", "groq", "together", "fireworks", "qwen"
+  ].includes(config.provider);
 }
 
 export function createChatRequest(config: BaseProviderConfig, messages: ChatMessage[], persona?: ChatRequest["persona"]): ChatRequest {
