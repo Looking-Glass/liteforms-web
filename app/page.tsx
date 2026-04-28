@@ -7,6 +7,7 @@ import type { CharacterConfig, LocalModelLoadState } from "@/components/chat/Cha
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import type { BaseProviderConfig } from "@/lib/llm";
 import type { AsrConfig, TtsConfig } from "@/lib/speech";
+import { saveSessionConfig, loadSessionConfig } from "@/lib/storage/sessionConfig";
 
 const onboardingStorageKey = "liteforms.onboardingMode";
 
@@ -34,11 +35,31 @@ export default function HomePage() {
       setShowOnboarding(true);
     } else if (savedMode === "builtin") {
       setShouldPreloadLocalModels(true);
+    } else if (savedMode === "custom") {
+      const saved = loadSessionConfig();
+      if (saved) {
+        setInitialLlmConfig(saved.llm);
+        setInitialTtsConfig(saved.tts);
+        setInitialAsrConfig(saved.asr);
+        // React 18 batches these updates, so ChatPanel re-mounts in a single
+        // re-render with the correct initialConfig — avoiding the two-render
+        // cycle where ChatPanel's own useState would ignore an updated prop.
+        setChatPanelKey((k) => k + 1);
+      }
+      setShouldPreloadLocalModels(true);
     }
   }, []);
 
   const handleLocalModelLoadStateChange = useCallback((state: LocalModelLoadState[]) => {
     setModalLoadState(state);
+  }, []);
+
+  const handleConfigChange = useCallback((llm: BaseProviderConfig, tts: TtsConfig, asr: AsrConfig) => {
+    // Persist mid-session settings changes so they survive a page refresh.
+    const savedMode = localStorage.getItem(onboardingStorageKey);
+    if (savedMode === "custom") {
+      saveSessionConfig({ llm, tts, asr });
+    }
   }, []);
 
   function handleUseBuiltIn() {
@@ -49,6 +70,7 @@ export default function HomePage() {
 
   function handleUseCustom(config: BaseProviderConfig, ttsConfig: TtsConfig, asrConfig: AsrConfig) {
     localStorage.setItem(onboardingStorageKey, "custom");
+    saveSessionConfig({ llm: config, tts: ttsConfig, asr: asrConfig });
     setInitialLlmConfig(config);
     setInitialTtsConfig(ttsConfig);
     setInitialAsrConfig(asrConfig);
@@ -80,6 +102,7 @@ export default function HomePage() {
         initialTtsConfig={initialTtsConfig}
         initialAsrConfig={initialAsrConfig}
         onLocalModelLoadStateChange={handleLocalModelLoadStateChange}
+        onConfigChange={handleConfigChange}
       />
       {showOnboarding && (
         <OnboardingModal

@@ -341,7 +341,7 @@ describe("ChatPanel Settings model dropdown", () => {
     expect(screen.getByLabelText("Model provider")).toHaveValue("together");
   });
 
-  // ── Model input (Advanced section always shows free-text input) ────────────
+  // ── Model control in Advanced (matches onboarding: dropdown when provider has a static list) ─
 
   it("shows a free-text model input for Ollama (dynamic models)", () => {
     renderPanel();
@@ -362,38 +362,51 @@ describe("ChatPanel Settings model dropdown", () => {
     expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
   });
 
-  // ── Default models (shown in Advanced section model text input) ────────────
+  it("shows a model dropdown for Anthropic (provider with known models)", () => {
+    renderPanel();
+    selectProvider("anthropic");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows a model dropdown for OpenAI", () => {
+    renderPanel();
+    selectProvider("openai");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
+  });
+
+  // ── Default models (Advanced section) ─────────────────────────────────────
 
   it("OpenAI defaults to gpt-5.5", () => {
     renderPanel();
     selectProvider("openai");
-    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("gpt-5.5");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.5");
   });
 
   it("Anthropic defaults to claude-opus-4-7", () => {
     renderPanel();
     selectProvider("anthropic");
-    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("claude-opus-4-7");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("claude-opus-4-7");
   });
 
   it("Google defaults to gemini-3.1-pro-preview", () => {
     renderPanel();
     selectProvider("google");
-    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("gemini-3.1-pro-preview");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gemini-3.1-pro-preview");
   });
 
   it("xAI defaults to grok-4", () => {
     renderPanel();
     selectProvider("xai");
-    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("grok-4");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("grok-4");
   });
 
   // ── Config integration ──────────────────────────────────────────────────
 
-  it("editing the model text input updates the active model", async () => {
+  it("editing the model selection updates the active model", async () => {
     renderPanel();
     selectProvider("anthropic");
-    fireEvent.change(screen.getByRole("textbox", { name: "Model" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
       target: { value: "claude-sonnet-4-5" }
     });
     const input = screen.getByPlaceholderText("Type a message…");
@@ -440,16 +453,16 @@ describe("ChatPanel Settings TTS dropdown", () => {
     expect(screen.getByLabelText("Voice provider")).toHaveValue("minimax");
   });
 
-  it("non-Kokoro TTS provider shows a Voice API key field", () => {
+  it("non-Kokoro TTS provider shows Voice credential field", () => {
     renderPanel();
     selectTtsProvider("elevenlabs");
-    expect(screen.getByLabelText("Voice API key")).toBeInTheDocument();
+    expect(screen.getByLabelText("Voice credential")).toBeInTheDocument();
   });
 
-  it("Kokoro TTS does not show a Voice API key field", () => {
+  it("Kokoro TTS does not show Voice credential field", () => {
     renderPanel();
-    // Kokoro is the default; confirm no API key field
-    expect(screen.queryByLabelText("Voice API key")).not.toBeInTheDocument();
+    // Kokoro is the default
+    expect(screen.queryByLabelText("Voice credential")).not.toBeInTheDocument();
   });
 });
 
@@ -553,27 +566,27 @@ describe("ChatPanel streaming TTS pipeline", () => {
   });
 });
 
-describe("ChatPanel Mic input dropdown", () => {
-  function selectMicProvider(id: string) {
-    fireEvent.change(screen.getByLabelText("Mic input"), { target: { value: id } });
+describe("ChatPanel speech input provider dropdown", () => {
+  function selectSpeechInputProvider(id: string) {
+    fireEvent.change(screen.getByLabelText("Speech input provider"), { target: { value: id } });
   }
 
-  it("Mic input dropdown includes Deepgram", () => {
+  it("Speech input dropdown includes Deepgram", () => {
     renderPanel();
-    selectMicProvider("deepgram");
-    expect(screen.getByLabelText("Mic input")).toHaveValue("deepgram");
+    selectSpeechInputProvider("deepgram");
+    expect(screen.getByLabelText("Speech input provider")).toHaveValue("deepgram");
   });
 
-  it("Mic input dropdown includes ElevenLabs STT", () => {
+  it("Speech input dropdown includes ElevenLabs STT", () => {
     renderPanel();
-    selectMicProvider("elevenlabs");
-    expect(screen.getByLabelText("Mic input")).toHaveValue("elevenlabs");
+    selectSpeechInputProvider("elevenlabs");
+    expect(screen.getByLabelText("Speech input provider")).toHaveValue("elevenlabs");
   });
 
-  it("Deepgram Mic input shows a Transcription API key field", () => {
+  it("Deepgram speech input shows Transcription credential field", () => {
     renderPanel();
-    selectMicProvider("deepgram");
-    expect(screen.getByLabelText("Transcription API key")).toBeInTheDocument();
+    selectSpeechInputProvider("deepgram");
+    expect(screen.getByLabelText("Transcription credential")).toBeInTheDocument();
   });
 });
 

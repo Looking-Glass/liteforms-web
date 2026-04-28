@@ -246,8 +246,20 @@ describe("new TTS adapters", () => {
     return new Response(new ArrayBuffer(4), { headers: { "content-type": "audio/mpeg" } });
   }
 
+  /** Vitest's `vi.fn()` infers `mock.calls` as empty tuples unless the mock is typed like `fetch`. */
+  function mockFetch(fn: (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>) {
+    return vi.fn(fn);
+  }
+
+  /** `Parameters<typeof fetch>` marks `init` optional; these tests always pass RequestInit. */
+  function firstFetchCall(fetchMock: ReturnType<typeof mockFetch>): { url: string; init: RequestInit } {
+    const [input, init] = fetchMock.mock.calls[0];
+    expect(init).toBeDefined();
+    return { url: String(input), init: init as RequestInit };
+  }
+
   it("calls OpenAI TTS with Bearer auth at /audio/speech endpoint", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "openai", credential: "sk-key", voice: "coral" },
       fetch: fetchMock
@@ -261,13 +273,14 @@ describe("new TTS adapters", () => {
         headers: expect.objectContaining({ Authorization: "Bearer sk-key" })
       })
     );
-    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    const { init } = firstFetchCall(fetchMock);
+    const body = JSON.parse(init.body as string);
     expect(body).toMatchObject({ model: "gpt-4o-mini-tts", input: "Hello", voice: "coral" });
   });
 
   it("calls Google TTS with API key in URL and parses base64 audio from JSON", async () => {
     const b64 = btoa(String.fromCharCode(1, 2, 3));
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = mockFetch(async () =>
       Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "audio/wav", data: b64 } }] } }] })
     );
     const adapter = createTtsAdapter({
@@ -278,20 +291,20 @@ describe("new TTS adapters", () => {
     const result = await adapter.synthesize("Hello");
     expect(result.mimeType).toBe("audio/wav");
     expect(result.audio.byteLength).toBe(3);
-    const url = fetchMock.mock.calls[0][0] as string;
+    const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain("key=goog-key");
     expect(url).toContain("gemini-3.1-flash-tts-preview");
   });
 
   it("calls xAI TTS with Bearer auth (OpenAI-compatible) at x.ai endpoint", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "xai", credential: "xai-key", voice: "eve" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init: opts } = firstFetchCall(fetchMock);
     expect(url).toBe("https://api.x.ai/v1/audio/speech");
     expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Bearer xai-key");
     const body = JSON.parse(opts.body as string);
@@ -299,32 +312,32 @@ describe("new TTS adapters", () => {
   });
 
   it("calls DeepInfra TTS with Bearer auth at deepinfra endpoint", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "deepinfra", credential: "di-key", voice: "af_alloy" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://api.deepinfra.com/v1/openai/audio/speech");
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("https://api.deepinfra.com/v1/openai/audio/speech");
   });
 
   it("calls OpenRouter TTS with Bearer auth at openrouter endpoint", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "openrouter", credential: "or-key", voice: "af_alloy" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("https://openrouter.ai/api/v1/audio/speech");
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toBe("https://openrouter.ai/api/v1/audio/speech");
   });
 
   it("calls MiniMax TTS and decodes hex-encoded audio from JSON response", async () => {
     const hexAudio = "010203"; // bytes [1,2,3]
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = mockFetch(async () =>
       Response.json({ base_resp: { status_code: 0 }, data: { audio: hexAudio } })
     );
     const adapter = createTtsAdapter({
@@ -334,73 +347,73 @@ describe("new TTS adapters", () => {
 
     const result = await adapter.synthesize("Hello");
     expect(result.audio.byteLength).toBe(3);
-    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("minimax.io");
-    expect(url).toContain("t2a_pro");
+    const { url, init: opts } = firstFetchCall(fetchMock);
+    expect(String(url)).toContain("minimax.io");
+    expect(String(url)).toContain("t2a_pro");
     expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Bearer mm-key");
   });
 
   it("calls Inworld TTS with Bearer auth", async () => {
     const b64 = btoa(String.fromCharCode(1, 2, 3));
-    const fetchMock = vi.fn(async () => Response.json({ audio: b64 }));
+    const fetchMock = mockFetch(async () => Response.json({ audio: b64 }));
     const adapter = createTtsAdapter({
       config: { provider: "inworld", credential: "iw-key", voice: "Sarah" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init: opts } = firstFetchCall(fetchMock);
     expect(url).toContain("inworld.ai");
     expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Bearer iw-key");
   });
 
   it("calls Gradium TTS using ElevenLabs-style voice endpoint", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "gradium", credential: "gr-key", voice: "YTpq7expH9539ERJ" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("gradium.ai");
-    expect(url).toContain("YTpq7expH9539ERJ");
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("gradium.ai");
+    expect(String(url)).toContain("YTpq7expH9539ERJ");
   });
 
   it("calls Vydra TTS using ElevenLabs-style voice endpoint", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "vydra", credential: "vy-key", voice: "21m00Tcm4TlvDq8ikWAM" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("vydra.ai");
-    expect(url).toContain("21m00Tcm4TlvDq8ikWAM");
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("vydra.ai");
+    expect(String(url)).toContain("21m00Tcm4TlvDq8ikWAM");
   });
 
   it("calls Xiaomi TTS with Bearer auth (OpenAI-compatible)", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "xiaomi", credential: "xi-key", voice: "mimo_default" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("xiaomimimo.com");
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("xiaomimimo.com");
   });
 
   it("calls Azure Speech TTS with SSML body and subscription key header", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "azure-speech", credential: "az-key", voice: "en-US-JennyNeural" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init: opts } = firstFetchCall(fetchMock);
     expect(url).toContain("speech.microsoft.com");
     expect((opts.headers as Record<string, string>)["Ocp-Apim-Subscription-Key"]).toBe("az-key");
     expect(opts.body as string).toContain("en-US-JennyNeural");
@@ -409,27 +422,27 @@ describe("new TTS adapters", () => {
 
   it("calls Volcengine TTS with Bearer auth and JSON body", async () => {
     const b64 = btoa(String.fromCharCode(1, 2, 3));
-    const fetchMock = vi.fn(async () => Response.json({ data: { audio: b64 } }));
+    const fetchMock = mockFetch(async () => Response.json({ data: { audio: b64 } }));
     const adapter = createTtsAdapter({
       config: { provider: "volcengine", credential: "vc-key", voice: "en_female_anna_mars_bigtts" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url, opts] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const { url, init: opts } = firstFetchCall(fetchMock);
     expect(url).toContain("bytepluses.com");
     expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Bearer vc-key");
   });
 
   it("calls Microsoft Edge TTS via proxy endpoint", async () => {
-    const fetchMock = vi.fn(async () => audioResponse());
+    const fetchMock = mockFetch(async () => audioResponse());
     const adapter = createTtsAdapter({
       config: { provider: "microsoft", voice: "en-US-MichelleNeural" },
       fetch: fetchMock
     });
 
     await adapter.synthesize("Hello");
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("localhost:5000");
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain("localhost:5000");
   });
 });

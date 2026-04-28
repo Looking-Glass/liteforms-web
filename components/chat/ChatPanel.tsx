@@ -48,6 +48,8 @@ type ChatPanelProps = {
   initialTtsConfig?: TtsConfig;
   initialAsrConfig?: AsrConfig;
   onLocalModelLoadStateChange?: (state: LocalModelLoadState[]) => void;
+  /** Called whenever the user changes any provider/model/credential setting mid-session. */
+  onConfigChange?: (llm: BaseProviderConfig, tts: TtsConfig, asr: AsrConfig) => void;
 };
 
 type ChatStatus = "idle" | "streaming" | "error";
@@ -84,7 +86,8 @@ export function ChatPanel({
   initialLlmConfig,
   initialTtsConfig,
   initialAsrConfig,
-  onLocalModelLoadStateChange
+  onLocalModelLoadStateChange,
+  onConfigChange
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: "assistant", content: character.greeting }]);
   const [status, setStatus] = useState<ChatStatus>("idle");
@@ -140,6 +143,20 @@ export function ChatPanel({
   useEffect(() => {
     onLocalModelLoadStateChange?.(localModelLoadState);
   }, [localModelLoadState, onLocalModelLoadStateChange]);
+
+  // Persist config only on actual user edits, not on the initial mount.
+  // React fires child effects before parent effects, so on a page refresh this
+  // effect would otherwise run with the unhydrated Gemma defaults BEFORE the
+  // page-level useEffect could pass the restored config through props — the
+  // initial call would overwrite the saved sessionConfig with stale defaults.
+  const configChangeFirstRunRef = useRef(true);
+  useEffect(() => {
+    if (configChangeFirstRunRef.current) {
+      configChangeFirstRunRef.current = false;
+      return;
+    }
+    onConfigChange?.(config, ttsConfig, asrConfig);
+  }, [config, ttsConfig, asrConfig, onConfigChange]);
 
   useEffect(() => {
     if (!shouldPreloadLocalModels) return;
@@ -233,7 +250,25 @@ export function ChatPanel({
       }
     }
 
-    void runPreload();
+    async function maybeRunPreload() {
+      // If models were successfully loaded in a prior session and Cache Storage
+      // still has the files, skip re-running the worker preloads — this prevents
+      // Transformers.js from re-writing its metadata on every page load.
+      const hasPriorMetadata = readLocalModelMetadata() !== null;
+      if (hasPriorMetadata && (wantGemma || wantKokoro || wantDistilWhisper)) {
+        const usage = await getModelCacheUsage();
+        if (usage.fileCount > 0 && !preloadCancelledRef.current) {
+          setLocalModelLoadState(
+            initialLocalModelLoadState.map((m) => ({ ...m, status: "ready", progress: 100, message: "Cached" }))
+          );
+          setCacheUsage(usage);
+          return;
+        }
+      }
+      await runPreload();
+    }
+
+    void maybeRunPreload();
     return () => {
       preloadCancelledRef.current = true;
       // The module-level `preloadStartedSessions` is intentionally NOT cleared here.
@@ -476,6 +511,7 @@ export function ChatPanel({
     setIsClearingCache(true);
     setCacheUsage({ status: "Clearing cache", bytes: 0, fileCount: 0, unknownCount: 0 });
     const usage = await deleteModelCaches();
+    clearLocalModelMetadata();
     setCacheUsage(usage);
     setLocalModelLoadState(initialLocalModelLoadState);
     setIsClearingCache(false);
@@ -520,7 +556,9 @@ export function ChatPanel({
     if (providerId === "distil-whisper") {
       setAsrConfig({ provider: "distil-whisper" });
     } else if (providerId === "elevenlabs") {
-      setAsrConfig({ provider: "elevenlabs", model: opt.defaultModel });
+      const sharedCredential =
+        ttsConfig.provider === "elevenlabs" && "credential" in ttsConfig ? ttsConfig.credential : undefined;
+      setAsrConfig({ provider: "elevenlabs", credential: sharedCredential, model: opt.defaultModel });
     } else {
       setAsrConfig({
         provider: providerId as Exclude<AsrProviderId, "distil-whisper" | "elevenlabs">,
@@ -666,12 +704,12 @@ export function ChatPanel({
             </label>
             {CREDENTIAL_PROVIDER_IDS.includes(config.provider) ? (
               <label>
-                API key
+                Credential
                 <input
                   type="password"
                   value={config.credential ?? ""}
                   onChange={(event) => setConfig({ ...config, credential: event.target.value })}
-                  placeholder="Stored in browser only"
+                  placeholder="Browser-local only"
                 />
               </label>
             ) : null}
@@ -692,36 +730,36 @@ export function ChatPanel({
                 </select>
               </label>
               <label>
-                Mic input
+                Speech input provider
                 <select
                   value={asrConfig.provider}
                   onChange={(event) => updateAsrProvider(event.target.value as AsrProviderId)}
                 >
-                  <option value="distil-whisper">Whisper (local)</option>
-                  <option value="deepgram">Deepgram</option>
-                  <option value="elevenlabs">ElevenLabs</option>
+                  {STT_PROVIDER_OPTIONS.map((p) => (
+                    <option key={p.id} value={p.id}>{p.label}</option>
+                  ))}
                 </select>
               </label>
             </div>
             {ttsConfig.provider !== "kokoro" ? (
               <label>
-                Voice API key
+                Voice credential
                 <input
                   type="password"
                   value={"credential" in ttsConfig ? ttsConfig.credential ?? "" : ""}
                   onChange={(event) => setTtsConfig({ ...ttsConfig, credential: event.target.value } as TtsConfig)}
-                  placeholder="Stored in browser only"
+                  placeholder="Browser-local only"
                 />
               </label>
             ) : null}
             {sttMeta.needsCredential ? (
               <label>
-                Transcription API key
+                Transcription credential
                 <input
                   type="password"
                   value={"credential" in asrConfig ? asrConfig.credential ?? "" : ""}
                   onChange={(event) => setAsrConfig({ ...asrConfig, credential: event.target.value } as AsrConfig)}
-                  placeholder="Stored in browser only"
+                  placeholder="Browser-local only"
                 />
               </label>
             ) : null}
@@ -734,7 +772,15 @@ export function ChatPanel({
               <div className="model-settings">
                 <label>
                   Model
-                  <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
+                  {providerMeta.models ? (
+                    <select value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })}>
+                      {providerMeta.models.map((m) => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
+                  )}
                 </label>
                 {config.provider !== "browser-local-gemma" ? (
                   <label>
@@ -884,7 +930,7 @@ function persistLocalModelMetadata() {
       JSON.stringify({
         version: 1,
         storedAt: new Date().toISOString(),
-          models: [
+        models: [
           { id: "gemma", model: LLM_PROVIDER_OPTIONS[0].defaultModel, dtype: "q4f16", device: "webgpu" },
           { id: "kokoro", model: "onnx-community/Kokoro-82M-v1.0-ONNX", dtype: "fp32", device: "webgpu" },
           { id: "distil-whisper", model: "onnx-community/distil-small.en", dtype: "q4", device: "webgpu" }
@@ -893,6 +939,23 @@ function persistLocalModelMetadata() {
     );
   } catch {
     // localStorage can be disabled in private browsing or hardened contexts.
+  }
+}
+
+function readLocalModelMetadata(): unknown | null {
+  try {
+    const raw = localStorage.getItem(localModelStorageKey);
+    return raw ? (JSON.parse(raw) as unknown) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearLocalModelMetadata() {
+  try {
+    localStorage.removeItem(localModelStorageKey);
+  } catch {
+    // ignore
   }
 }
 
