@@ -142,6 +142,7 @@ export function ChatPanel({
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const lastAudioRef = useRef<Blob | null>(null);
+  const composerFormRef = useRef<HTMLFormElement>(null);
   const localGemmaWorkerRef = useRef(new LocalGemmaWorkerClient());
   const kokoroWorkerRef = useRef(new KokoroWorkerClient());
   const distilWhisperWorkerRef = useRef(new DistilWhisperWorkerClient());
@@ -389,7 +390,7 @@ export function ChatPanel({
         const audio = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         lastAudioRef.current = audio;
         setLastAsrDebug(`STT: transcribing ${formatBytes(audio.size)} ${audio.type || "audio"}`);
-        void transcribeRecordedAudio(audio);
+        void transcribeRecordedAudio(audio, { autoSubmit: true });
       });
       recorderRef.current = recorder;
       recorder.start();
@@ -407,14 +408,22 @@ export function ChatPanel({
     }
   }
 
-  async function transcribeRecordedAudio(audio: Blob) {
+  async function transcribeRecordedAudio(audio: Blob, { autoSubmit = false }: { autoSubmit?: boolean } = {}) {
     try {
       const adapter = createAsrAdapter({ config: asrConfig, worker: distilWhisperWorkerRef.current });
       const result = await adapter.transcribe(audio);
       const text = result.text.trim();
-      setTranscript(text);
       setLastAsrDebug(text ? `STT: "${text}"` : "STT: finished with no transcript");
       setSpeechStatus("idle");
+      if (autoSubmit && text) {
+        const input = document.getElementById("message") as HTMLInputElement | null;
+        if (input) {
+          input.value = text;
+        }
+        composerFormRef.current?.requestSubmit();
+      } else {
+        setTranscript(text);
+      }
     } catch (caught) {
       setSpeechError(caught instanceof Error ? caught.message : "Transcription failed.");
       setSpeechStatus("error");
@@ -746,7 +755,7 @@ export function ChatPanel({
         ))}
       </div>
       {error ? <p className="chat-error">{error}</p> : null}
-      <form className="composer" onSubmit={onSubmit}>
+      <form ref={composerFormRef} className="composer" onSubmit={onSubmit}>
         <label className="sr-only" htmlFor="message">
           Message
         </label>

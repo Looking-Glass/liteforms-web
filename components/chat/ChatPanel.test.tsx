@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import { ChatPanel } from "./ChatPanel";
 import type { CharacterConfig } from "./ChatPanel";
+import { createLlmAdapter } from "@/lib/llm";
+import { createAsrAdapter } from "@/lib/speech";
 
 afterEach(cleanup);
 
@@ -229,6 +231,97 @@ describe("ChatPanel chat interface", () => {
     renderPanel();
     expect(screen.getByPlaceholderText("Type a message")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
+  });
+});
+
+// ── Mic auto-submit flow ─────────────────────────────────────────────────────
+
+class MockMediaRecorder {
+  state: string = "inactive";
+  mimeType: string = "audio/webm";
+  private handlers: Record<string, Array<(e: unknown) => void>> = {};
+
+  addEventListener(event: string, handler: (e: unknown) => void) {
+    if (!this.handlers[event]) this.handlers[event] = [];
+    this.handlers[event].push(handler);
+  }
+
+  start() {
+    this.state = "recording";
+  }
+
+  stop() {
+    this.state = "inactive";
+    this.handlers["stop"]?.forEach((h) => h({}));
+  }
+}
+
+describe("mic auto-submit flow", () => {
+  let capturedRecorder: MockMediaRecorder | null = null;
+
+  beforeEach(() => {
+    capturedRecorder = null;
+    const MockRecorderClass = class extends MockMediaRecorder {
+      constructor(...args: unknown[]) {
+        super(...args as []);
+        capturedRecorder = this;
+      }
+    };
+    vi.stubGlobal("MediaRecorder", MockRecorderClass);
+
+    const mockTrack = { stop: vi.fn() };
+    const mockStream = { getTracks: vi.fn().mockReturnValue([mockTrack]) };
+    Object.defineProperty(global.navigator, "mediaDevices", {
+      value: { getUserMedia: vi.fn().mockResolvedValue(mockStream) },
+      writable: true,
+      configurable: true
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("calls streamText with the transcribed text when mic recording stops", async () => {
+    vi.mocked(createAsrAdapter).mockReturnValue({
+      transcribe: vi.fn().mockResolvedValue({ text: "Hello from mic" })
+    });
+
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mic" }));
+    await waitFor(() => screen.getByRole("button", { name: "Stop mic" }));
+
+    capturedRecorder!.stop();
+
+    await waitFor(() => {
+      expect(vi.mocked(createLlmAdapter)).toHaveBeenCalled();
+    });
+
+    const streamTextMock = vi.mocked(createLlmAdapter).mock.results[0].value.streamText as ReturnType<typeof vi.fn>;
+    expect(streamTextMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: expect.arrayContaining([{ role: "user", content: "Hello from mic" }])
+      })
+    );
+  });
+
+  it("does not show the transcript preview panel after mic recording stops", async () => {
+    vi.mocked(createAsrAdapter).mockReturnValue({
+      transcribe: vi.fn().mockResolvedValue({ text: "Hello from mic" })
+    });
+
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mic" }));
+    await waitFor(() => screen.getByRole("button", { name: "Stop mic" }));
+
+    capturedRecorder!.stop();
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Use" })).not.toBeInTheDocument();
+    });
+    expect(screen.queryByText("Hello from mic", { selector: ".transcript-box span" })).not.toBeInTheDocument();
   });
 });
 
