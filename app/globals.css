@@ -102,6 +102,13 @@ textarea {
   top: 0;
 }
 
+/* ── Collapsible panels container ── */
+
+/* Each panel section manages its own scroll — no shared cap needed */
+.panel-sections {
+  flex-shrink: 0;
+}
+
 /* ── Collapsible sections ── */
 
 .panel-section {
@@ -109,19 +116,22 @@ textarea {
   flex-shrink: 0;
 }
 
+/* Distinct header: tinted background + left accent stripe */
 .panel-section > summary {
   align-items: center;
+  background: var(--surface2);
+  border-left: 3px solid var(--coral);
   cursor: pointer;
   display: flex;
   font-family: 'Space Mono', monospace;
   font-size: 11px;
   font-weight: 700;
   justify-content: space-between;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   list-style: none;
-  padding: 13px 20px;
+  padding: 11px 16px;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--text);
   user-select: none;
 }
 
@@ -131,6 +141,7 @@ textarea {
 
 .panel-section > summary::after {
   content: '›';
+  color: var(--muted);
   font-size: 16px;
   line-height: 1;
   transition: transform 0.15s;
@@ -141,13 +152,34 @@ textarea {
 }
 
 .panel-section > summary:hover {
-  color: var(--text);
+  background: oklch(0.20 0.04 228);
 }
 
+/* When open, cap body height and scroll internally so the other panel is always reachable */
 .panel-section-body {
-  padding: 0 20px 16px;
   display: grid;
   gap: 10px;
+  max-height: 38vh;
+  overflow-y: auto;
+  padding: 12px 20px 16px;
+}
+
+/* ── Chat section header ── */
+
+.chat-header {
+  align-items: center;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  border-left: 3px solid var(--cyan);
+  display: flex;
+  flex-shrink: 0;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  padding: 11px 16px;
+  text-transform: uppercase;
+  color: var(--text);
 }
 
 /* ── Advanced sub-section ── */
@@ -506,8 +538,10 @@ button:disabled {
   color: var(--muted);
   cursor: pointer;
   display: flex;
-  font-size: 16px;
-  padding: 8px 10px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
   transition: background 0.1s, color 0.1s;
   user-select: none;
 }

@@ -491,6 +491,9 @@ export function ChatPanel({
   return (
     <aside className="chat-panel" aria-label="Chat">
 
+      {/* ── Collapsible panels — capped height so chat always has room ── */}
+      <div className="panel-sections">
+
       {/* ── Character section (open by default) ── */}
       <details className="panel-section" open>
         <summary>Character</summary>
@@ -739,7 +742,10 @@ export function ChatPanel({
         </div>
       </details>
 
+      </div>{/* end .panel-sections */}
+
       {/* ── Chat ── */}
+      <div className="chat-header">Chat</div>
       <div className="message-list">
         {messages.map((message, index) => (
           <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
@@ -767,7 +773,10 @@ export function ChatPanel({
           onPointerLeave={() => { if (speechStatus === "listening") stopMicRecording(); }}
           disabled={speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking"}
         >
-          {speechStatus === "listening" ? "◉" : "🎙"}
+          <span style={{ fontSize: "16px", lineHeight: 1 }}>{speechStatus === "listening" ? "◉" : "🎙"}</span>
+          <span style={{ fontSize: "9px", letterSpacing: "0.06em", lineHeight: 1, fontFamily: "var(--font-mono, monospace)" }}>
+            {speechStatus === "listening" ? "REC" : "HOLD"}
+          </span>
         </button>
         <label className="sr-only" htmlFor="message">Message</label>
         <input id="message" name="message" placeholder="Type a message…" disabled={status === "streaming"} />
