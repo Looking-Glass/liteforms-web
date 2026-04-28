@@ -150,17 +150,19 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
         <div className="onboarding-modal">
           <h2 className="onboarding-title">Welcome to Liteforms</h2>
           <p className="onboarding-intro">
-            You can use Liteforms with our built-in free configuration or connect it to your own provider (OpenClaw,
-            ChatGPT, Anthropic, etc.)
+            Use the built-in free models or connect your own provider (OpenClaw, ChatGPT, Anthropic, etc.)
           </p>
           <div className="onboarding-actions">
             <button type="button" className="onboarding-primary" onClick={handleBuiltIn}>
-              Built-in models (300mb download)
+              Built-in models — free
             </button>
             <button type="button" className="onboarding-secondary" onClick={() => setStep("llm")}>
               Custom configuration
             </button>
           </div>
+          <p className="onboarding-warning">
+            Built-in models download ~250 MB to your browser cache. This only happens once, but may take a few minutes on slower connections.
+          </p>
         </div>
       </div>
     );
@@ -178,9 +180,9 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
         <div className="onboarding-modal">
           <h2 className="onboarding-title">Downloading models…</h2>
           <p className="onboarding-intro">
-            Gemma, Kokoro, and Distil-Whisper are downloading. They&apos;ll be cached so this only happens once.
+            ~250 MB downloading to your browser cache. This only happens once — grab a coffee if your connection is slow.
           </p>
-          <progress className="onboarding-progress" value={overallProgress} max={100} />
+          <progress className="onboarding-progress" value={overallProgress} max={100} aria-label={`${overallProgress}% complete`} />
           <div className="onboarding-model-list">
             {models.map((m) => (
               <div className="onboarding-model-row" key={m.id}>
@@ -191,7 +193,7 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
           </div>
           <div className="onboarding-footer onboarding-footer--end">
             <button type="button" className="onboarding-primary" disabled={!allModelsReady} onClick={onClose}>
-              Continue
+              {allModelsReady ? "Continue →" : `${overallProgress}%`}
             </button>
           </div>
         </div>

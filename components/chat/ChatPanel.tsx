@@ -60,7 +60,6 @@ export type LocalModelLoadState = {
   progress: number;
   message: string;
 };
-type ActiveTab = "settings" | "character";
 
 const localModelStorageKey = "liteforms.localModels";
 export const initialLocalModelLoadState: LocalModelLoadState[] = [
@@ -106,7 +105,6 @@ export function ChatPanel({
     unknownCount: 0
   });
   const [isClearingCache, setIsClearingCache] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActiveTab>("settings");
   const [vrmFileName, setVrmFileName] = useState("");
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -583,50 +581,79 @@ export function ChatPanel({
 
   return (
     <aside className="chat-panel" aria-label="Chat">
-      <div className="panel-tabs">
-        <button
-          type="button"
-          className={`tab-btn${activeTab === "settings" ? " active" : ""}`}
-          onClick={() => setActiveTab("settings")}
-        >
-          Settings
-        </button>
-        <button
-          type="button"
-          className={`tab-btn${activeTab === "character" ? " active" : ""}`}
-          onClick={() => setActiveTab("character")}
-        >
-          Character
-        </button>
-      </div>
 
-      {activeTab === "settings" ? (
-        <div className="panel-tab-content">
-          <section className="local-model-loading" aria-label="Local model loading">
-            <div className="local-model-loading-header">
-              <span>Local models</span>
-              <span>{localModelProgress}%</span>
+      {/* ── Collapsible panels — capped height so chat always has room ── */}
+      <div className="panel-sections">
+
+      {/* ── Character section (open by default) ── */}
+      <details className="panel-section" open>
+        <summary>Character</summary>
+        <div className="panel-section-body">
+          {isOpenClaw ? (
+            <p className="openclaw-note">
+              Character identity is managed by OpenClaw&apos;s soul system. Switch to a different provider to define a
+              custom persona here.
+            </p>
+          ) : (
+            <div className="character-settings">
+              <label>
+                Name
+                <input
+                  value={character.name}
+                  onChange={(e) => onCharacterChange({ ...character, name: e.target.value })}
+                  maxLength={80}
+                  placeholder="Character name"
+                />
+              </label>
+              <label>
+                Pronouns
+                <select
+                  value={character.pronouns}
+                  onChange={(e) =>
+                    onCharacterChange({ ...character, pronouns: e.target.value as CharacterConfig["pronouns"] })
+                  }
+                >
+                  <option value="HE">He / Him</option>
+                  <option value="SHE">She / Her</option>
+                  <option value="THEY">They / Them</option>
+                </select>
+              </label>
+              <label>
+                Personality
+                <textarea
+                  value={character.personality}
+                  onChange={(e) => onCharacterChange({ ...character, personality: e.target.value })}
+                  rows={4}
+                  maxLength={4000}
+                  placeholder="Describe the character's personality and role..."
+                />
+              </label>
             </div>
-            <div className="local-model-loading-header cache-usage">
-              <span>Model cache</span>
-              <span className="cache-usage-value">
-                {formatCacheUsage(cacheUsage)}
-                <button type="button" onClick={clearModelCache} disabled={isClearingCache || cacheUsage.fileCount === 0}>
-                  {isClearingCache ? "Clearing" : "Clear"}
+          )}
+
+          {/* Advanced: VRM load */}
+          <details className="advanced-section">
+            <summary>Advanced</summary>
+            <div className="advanced-body">
+              <input ref={vrmInputRef} type="file" accept=".vrm" className="sr-only" onChange={handleVrmLoad} />
+              <div className="vrm-row">
+                <button type="button" className="btn-ghost" onClick={() => vrmInputRef.current?.click()}>
+                  Load VRM
                 </button>
-              </span>
+                <span className="vrm-filename">{vrmFileName || "Default (lobster)"}</span>
+              </div>
             </div>
-            <progress value={localModelProgress} max={100} />
-            <div className="local-model-list">
-              {localModelLoadState.map((model) => (
-                <div className="local-model-row" key={model.id}>
-                  <span>{model.label}</span>
-                  <span className={`local-model-status ${model.status}`}>{model.message}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-          <section className="model-settings" aria-label="Model settings">
+          </details>
+        </div>
+      </details>
+
+      {/* ── Settings section (collapsed by default) ── */}
+      <details className="panel-section">
+        <summary>Settings</summary>
+        <div className="panel-section-body">
+
+          {/* Provider */}
+          <div className="model-settings">
             <label>
               Model provider
               <select value={config.provider} onChange={(event) => updateProvider(event.target.value as LlmProviderId)}>
@@ -637,55 +664,21 @@ export function ChatPanel({
                 ))}
               </select>
             </label>
-            <label>
-              Model
-              {providerMeta.models ? (
-                <select value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })}>
-                  {providerMeta.models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
-              )}
-            </label>
-            {config.provider !== "browser-local-gemma" ? (
-              <label>
-                Endpoint
-                <input
-                  value={config.baseUrl ?? providerMeta.defaultBaseUrl ?? ""}
-                  onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })}
-                />
-              </label>
-            ) : null}
             {CREDENTIAL_PROVIDER_IDS.includes(config.provider) ? (
               <label>
-                Credential
+                API key
                 <input
                   type="password"
                   value={config.credential ?? ""}
                   onChange={(event) => setConfig({ ...config, credential: event.target.value })}
-                  placeholder="Browser-local only"
+                  placeholder="Stored in browser only"
                 />
               </label>
             ) : null}
-            {isOpenClaw ? (
-              <label className="inline-toggle">
-                <input
-                  type="checkbox"
-                  checked={config.injectLiteformsPersona === true}
-                  onChange={(event) => setConfig({ ...config, injectLiteformsPersona: event.target.checked })}
-                />
-                Inject Liteforms persona
-              </label>
-            ) : null}
-            <p className="provider-note">
-              {getProviderLabel(config.provider)} requests are made directly from this browser.
-            </p>
-          </section>
-          <section className="speech-settings" aria-label="Speech settings">
+          </div>
+
+          {/* Voice */}
+          <div className="speech-settings">
             <div className="speech-grid">
               <label>
                 Voice provider
@@ -699,183 +692,185 @@ export function ChatPanel({
                 </select>
               </label>
               <label>
-                Speech input provider
+                Mic input
                 <select
                   value={asrConfig.provider}
                   onChange={(event) => updateAsrProvider(event.target.value as AsrProviderId)}
                 >
-                  {STT_PROVIDER_OPTIONS.map((p) => (
-                    <option key={p.id} value={p.id}>{p.label}</option>
-                  ))}
+                  <option value="distil-whisper">Whisper (local)</option>
+                  <option value="deepgram">Deepgram</option>
+                  <option value="elevenlabs">ElevenLabs</option>
                 </select>
               </label>
             </div>
-            {ttsMeta.voices ? (
+            {ttsConfig.provider !== "kokoro" ? (
               <label>
-                Voice
-                <select value={getTtsVoice()} onChange={(event) => setTtsVoice(event.target.value)}>
-                  {ttsMeta.voices.map((v) => (
-                    <option key={v.id} value={v.id}>{v.label}</option>
-                  ))}
-                </select>
-              </label>
-            ) : ttsConfig.provider !== "kokoro" ? (
-              <label>
-                {ttsConfig.provider === "elevenlabs" ? "Voice ID" : "Voice"}
-                <input value={getTtsVoice()} onChange={(event) => setTtsVoice(event.target.value)} />
-              </label>
-            ) : null}
-            {ttsMeta.models ? (
-              <label>
-                Voice model
-                <select value={getTtsModel()} onChange={(event) => setTtsModel(event.target.value)}>
-                  {ttsMeta.models.map((m) => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            {sttMeta.models ? (
-              <label>
-                Transcription model
-                <select value={getSttModel()} onChange={(event) => setSttModel(event.target.value)}>
-                  {sttMeta.models.map((m) => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            {ttsMeta.needsCredential ? (
-              <label>
-                Voice credential
+                Voice API key
                 <input
                   type="password"
                   value={"credential" in ttsConfig ? ttsConfig.credential ?? "" : ""}
                   onChange={(event) => setTtsConfig({ ...ttsConfig, credential: event.target.value } as TtsConfig)}
-                  placeholder="Browser-local only"
+                  placeholder="Stored in browser only"
                 />
               </label>
             ) : null}
             {sttMeta.needsCredential ? (
               <label>
-                Transcription credential
+                Transcription API key
                 <input
                   type="password"
                   value={"credential" in asrConfig ? asrConfig.credential ?? "" : ""}
                   onChange={(event) => setAsrConfig({ ...asrConfig, credential: event.target.value } as AsrConfig)}
-                  placeholder="Browser-local only"
+                  placeholder="Stored in browser only"
                 />
               </label>
             ) : null}
-            <div className="speech-actions">
-              <button
-                type="button"
-                onClick={testTtsProvider}
-                disabled={speechStatus === "testing" || speechStatus === "speaking"}
-              >
-                Test voice
-              </button>
-              {speechStatus === "listening" ? (
-                <button type="button" onClick={stopMicRecording}>
-                  Stop mic
+          </div>
+
+          {/* Advanced: model name, endpoint, local model status, cache, test buttons */}
+          <details className="advanced-section">
+            <summary>Advanced</summary>
+            <div className="advanced-body">
+              <div className="model-settings">
+                <label>
+                  Model
+                  <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
+                </label>
+                {config.provider !== "browser-local-gemma" ? (
+                  <label>
+                    Endpoint
+                    <input
+                      value={config.baseUrl ?? providerMeta.defaultBaseUrl ?? ""}
+                      onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })}
+                    />
+                  </label>
+                ) : null}
+                {isOpenClaw ? (
+                  <label className="inline-toggle">
+                    <input
+                      type="checkbox"
+                      checked={config.injectLiteformsPersona === true}
+                      onChange={(event) => setConfig({ ...config, injectLiteformsPersona: event.target.checked })}
+                    />
+                    Inject Liteforms persona
+                  </label>
+                ) : null}
+                {ttsConfig.provider === "elevenlabs" ? (
+                  <label>
+                    ElevenLabs voice ID
+                    <input
+                      value={ttsConfig.voiceId ?? "Rachel"}
+                      onChange={(event) => setTtsConfig({ ...ttsConfig, voiceId: event.target.value })}
+                    />
+                  </label>
+                ) : null}
+                {ttsConfig.provider === "deepgram" ? (
+                  <label>
+                    Deepgram voice model
+                    <input
+                      value={ttsConfig.voice ?? ttsConfig.model ?? "aura-asteria-en"}
+                      onChange={(event) =>
+                        setTtsConfig({ ...ttsConfig, voice: event.target.value, model: event.target.value })
+                      }
+                    />
+                  </label>
+                ) : null}
+              </div>
+
+              <div className="local-model-progress">
+                <div className="cache-row">
+                  <span>Local models</span>
+                  <span>{localModelProgress}%</span>
+                </div>
+                <progress value={localModelProgress} max={100} />
+                <div className="local-model-list">
+                  {localModelLoadState.map((model) => (
+                    <div className="local-model-row" key={model.id}>
+                      <span>{model.label}</span>
+                      <span className={`local-model-status ${model.status}`}>{model.message}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="cache-row">
+                  <span>Cache</span>
+                  <span className="cache-actions">
+                    {formatCacheUsage(cacheUsage)}
+                    <button type="button" onClick={clearModelCache} disabled={isClearingCache || cacheUsage.fileCount === 0}>
+                      {isClearingCache ? "Clearing…" : "Clear"}
+                    </button>
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  style={{ flex: 1, justifyContent: "center" }}
+                  onClick={testTtsProvider}
+                  disabled={speechStatus === "testing" || speechStatus === "speaking"}
+                >
+                  Test voice
                 </button>
-              ) : (
-                <button type="button" onClick={startMicRecording} disabled={speechStatus === "transcribing"}>
-                  Mic
-                </button>
-              )}
-              <button type="button" onClick={testAsrProvider} disabled={speechStatus === "listening"}>
-                Test STT
-              </button>
-            </div>
-            <p className="provider-note">
-              {getTtsProviderLabel(normalizeTtsConfig(ttsConfig).provider)} and{" "}
-              {getAsrProviderLabel(normalizeAsrConfig(asrConfig).provider)} run from this browser.
-            </p>
-            {lastTtsDebug ? <p className="provider-note">{lastTtsDebug}</p> : null}
-            {lastAsrDebug ? <p className="provider-note">{lastAsrDebug}</p> : null}
-            {transcript ? (
-              <div className="transcript-box">
-                <span>{transcript}</span>
-                <button type="button" onClick={useTranscript}>
-                  Use
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  style={{ flex: 1, justifyContent: "center" }}
+                  onClick={testAsrProvider}
+                  disabled={speechStatus === "listening"}
+                >
+                  Test STT
                 </button>
               </div>
-            ) : null}
-            {speechError ? <p className="chat-error">{speechError}</p> : null}
-          </section>
-        </div>
-      ) : (
-        <div className="panel-tab-content">
-          <section className="character-settings" aria-label="Character settings">
-            {isOpenClaw ? (
-              <p className="provider-note openclaw-note">
-                Character identity is managed by OpenClaw&apos;s soul system. Switch to a different provider to define a
-                custom persona here.
-              </p>
-            ) : (
-              <>
-                <label>
-                  Name
-                  <input
-                    value={character.name}
-                    onChange={(e) => onCharacterChange({ ...character, name: e.target.value })}
-                    maxLength={80}
-                    placeholder="Character name"
-                  />
-                </label>
-                <label>
-                  Pronouns
-                  <select
-                    value={character.pronouns}
-                    onChange={(e) =>
-                      onCharacterChange({ ...character, pronouns: e.target.value as CharacterConfig["pronouns"] })
-                    }
-                  >
-                    <option value="HE">He / Him</option>
-                    <option value="SHE">She / Her</option>
-                    <option value="THEY">They / Them</option>
-                  </select>
-                </label>
-                <label>
-                  Personality
-                  <textarea
-                    value={character.personality}
-                    onChange={(e) => onCharacterChange({ ...character, personality: e.target.value })}
-                    rows={5}
-                    maxLength={4000}
-                    placeholder="Describe the character's personality and role..."
-                  />
-                </label>
-              </>
-            )}
-            <div className="vrm-section">
-              <p className="vrm-label">Avatar model</p>
-              <input ref={vrmInputRef} type="file" accept=".vrm" className="sr-only" onChange={handleVrmLoad} />
-              <button type="button" className="vrm-load-btn" onClick={() => vrmInputRef.current?.click()}>
-                Load VRM
-              </button>
-              <p className="provider-note">{vrmFileName ? vrmFileName : "Using default (lobster)"}</p>
-            </div>
-          </section>
-        </div>
-      )}
 
+              {lastTtsDebug ? <p className="provider-note">{lastTtsDebug}</p> : null}
+              {lastAsrDebug ? <p className="provider-note">{lastAsrDebug}</p> : null}
+              <p className="provider-note">All requests made directly from this browser.</p>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      </div>{/* end .panel-sections */}
+
+      {/* ── Chat ── */}
+      <div className="chat-header">Chat</div>
       <div className="message-list">
         {messages.map((message, index) => (
           <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
-            <span>{message.content || (status === "streaming" && index === messages.length - 1 ? "..." : "")}</span>
+            <span>{message.content || (status === "streaming" && index === messages.length - 1 ? "…" : "")}</span>
           </div>
         ))}
       </div>
+      {transcript ? (
+        <div style={{ padding: "0 20px 8px" }}>
+          <div className="transcript-box">
+            <span>{transcript}</span>
+            <button type="button" onClick={useTranscript}>Use</button>
+          </div>
+        </div>
+      ) : null}
       {error ? <p className="chat-error">{error}</p> : null}
+      {speechError ? <p className="chat-error">{speechError}</p> : null}
       <form ref={composerFormRef} className="composer" onSubmit={onSubmit}>
-        <label className="sr-only" htmlFor="message">
-          Message
-        </label>
-        <input id="message" name="message" placeholder="Type a message" disabled={status === "streaming"} />
-        <button type="submit" disabled={status === "streaming"}>
-          {status === "streaming" ? "Sending" : "Send"}
+        <button
+          type="button"
+          className={`mic-btn${speechStatus === "listening" ? " listening" : ""}`}
+          aria-label={speechStatus === "listening" ? "Release to send" : "Hold to talk"}
+          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); void startMicRecording(); }}
+          onPointerUp={() => stopMicRecording()}
+          onPointerLeave={() => { if (speechStatus === "listening") stopMicRecording(); }}
+          disabled={speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking"}
+        >
+          <span style={{ fontSize: "16px", lineHeight: 1 }}>{speechStatus === "listening" ? "◉" : "🎙"}</span>
+          <span style={{ fontSize: "9px", letterSpacing: "0.06em", lineHeight: 1, fontFamily: "var(--font-mono, monospace)" }}>
+            {speechStatus === "listening" ? "REC" : "HOLD"}
+          </span>
+        </button>
+        <label className="sr-only" htmlFor="message">Message</label>
+        <input id="message" name="message" placeholder="Type a message…" disabled={status === "streaming"} />
+        <button type="submit" className="send-btn" disabled={status === "streaming"}>
+          {status === "streaming" ? "…" : "Send"}
         </button>
       </form>
     </aside>
