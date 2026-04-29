@@ -692,6 +692,40 @@ button:disabled {
 
 /* ── Loading screen — stable layout during download ── */
 
+.onboarding-model-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+
+.onboarding-queue-item {
+  font-size: 13px;
+}
+
+.onboarding-queue-item--loading {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.onboarding-queue-item--idle {
+  color: var(--muted);
+}
+
+.onboarding-queue-item--ready {
+  color: var(--cyan);
+}
+
+.onboarding-queue-item--error {
+  color: #ffb3a6;
+}
+
+.onboarding-ready-message {
+  color: var(--cyan);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
 .onboarding-progress {
   accent-color: var(--cyan);
   height: 6px;

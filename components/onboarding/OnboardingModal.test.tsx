@@ -112,20 +112,75 @@ describe("OnboardingModal welcome screen", () => {
 // ── Loading step ──────────────────────────────────────────────────────────────
 
 describe("OnboardingModal loading step", () => {
-  it("shows model names in the loading step", () => {
+  it("shows the currently-loading model name in the loading step", () => {
     renderModal({ localModelLoadState: loadingLoadState });
     goToLoadingStep();
-    // Use exact label strings from the load state rows (not the description paragraph)
+    // Only the active model (first one with status "loading") is shown as the current label
+    expect(screen.getByText("Gemma 4 E2B q8")).toBeInTheDocument();
+  });
+
+  it("shows the next-queued model name when nothing is loading yet", () => {
+    const idleState = loadingLoadState.map((m) => ({ ...m, status: "idle" as const, progress: 0 }));
+    renderModal({ localModelLoadState: idleState });
+    goToLoadingStep();
+    // First idle model becomes the active label
+    expect(screen.getByText("Gemma 4 E2B q8")).toBeInTheDocument();
+  });
+
+  it("shows 'All models ready' when all models are done", () => {
+    renderModal({ localModelLoadState: readyLoadState });
+    goToLoadingStep();
+    expect(screen.getByText(/all models ready/i)).toBeInTheDocument();
+  });
+
+  it("shows overall local-model progress in the disabled button while loading", () => {
+    renderModal({ localModelLoadState: loadingLoadState });
+    goToLoadingStep();
+    // loadingLoadState has one model at 50% and two at 0%.
+    expect(screen.getByRole("button", { name: "16.7%" })).toBeDisabled();
+  });
+
+  // ── Queue list ──────────────────────────────────────────────────────────────
+
+  it("shows all model names in the queue list", () => {
+    renderModal({ localModelLoadState: loadingLoadState });
+    goToLoadingStep();
     expect(screen.getByText("Gemma 4 E2B q8")).toBeInTheDocument();
     expect(screen.getByText("Kokoro")).toBeInTheDocument();
     expect(screen.getByText("Distil-Whisper")).toBeInTheDocument();
   });
 
-  it("shows the status message for each model", () => {
+  it("marks the active (loading) model with --loading class", () => {
     renderModal({ localModelLoadState: loadingLoadState });
     goToLoadingStep();
-    expect(screen.getByText("Downloading")).toBeInTheDocument();
-    expect(screen.getAllByText("Waiting").length).toBeGreaterThanOrEqual(2);
+    // loadingLoadState: gemma is loading, kokoro and distil-whisper are idle
+    const gemmaItem = screen.getByText("Gemma 4 E2B q8").closest(".onboarding-queue-item");
+    expect(gemmaItem).toHaveClass("onboarding-queue-item--loading");
+  });
+
+  it("marks queued (idle) models with --idle class", () => {
+    renderModal({ localModelLoadState: loadingLoadState });
+    goToLoadingStep();
+    const kokoroItem = screen.getByText("Kokoro").closest(".onboarding-queue-item");
+    expect(kokoroItem).toHaveClass("onboarding-queue-item--idle");
+    const whisperItem = screen.getByText("Distil-Whisper").closest(".onboarding-queue-item");
+    expect(whisperItem).toHaveClass("onboarding-queue-item--idle");
+  });
+
+  it("marks finished models with --ready class", () => {
+    renderModal({ localModelLoadState: readyLoadState });
+    goToLoadingStep();
+    const gemmaItem = screen.getByText("Gemma 4 E2B q8").closest(".onboarding-queue-item");
+    expect(gemmaItem).toHaveClass("onboarding-queue-item--ready");
+  });
+
+  it("formats fractional progress with one decimal place in the button", () => {
+    const fractionalState = loadingLoadState.map((m, i) =>
+      i === 0 ? { ...m, status: "loading" as const, progress: 13.6789 } : m
+    );
+    renderModal({ localModelLoadState: fractionalState });
+    goToLoadingStep();
+    expect(screen.getByRole("button", { name: "4.6%" })).toBeDisabled();
   });
 
   it("shows a Continue button on the loading step", () => {
@@ -181,6 +236,23 @@ describe("OnboardingModal LLM step", () => {
     renderModal();
     goToLlmStep();
     expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("browser-local-gemma");
+  });
+
+  it("hides model dropdown for browser-local-gemma (only one model)", () => {
+    renderModal();
+    goToLlmStep();
+    // Default is browser-local-gemma — no separate model picker should appear
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows model dropdown again after switching to a multi-model provider", () => {
+    renderModal();
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "anthropic" }
+    });
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
   });
 
   it("has a Back button that returns to the welcome screen", () => {

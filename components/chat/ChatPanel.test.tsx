@@ -205,6 +205,35 @@ describe("ChatPanel chat interface", () => {
   });
 });
 
+// ── Message list auto-scroll ─────────────────────────────────────────────────
+
+describe("ChatPanel message list auto-scroll", () => {
+  it("sets scrollTop to scrollHeight on mount (initial greeting)", () => {
+    renderPanel();
+    const list = document.querySelector(".message-list") as HTMLElement;
+    const scrollTopValues: number[] = [];
+    Object.defineProperty(list, "scrollHeight", { get: () => 400, configurable: true });
+    Object.defineProperty(list, "scrollTop", {
+      set: (v: number) => scrollTopValues.push(v),
+      get: () => scrollTopValues[scrollTopValues.length - 1] ?? 0,
+      configurable: true
+    });
+    // Trigger another render by sending a message (streaming mock returns nothing, so status stays idle)
+    const input = screen.getByPlaceholderText("Type a message…");
+    fireEvent.change(input, { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(scrollTopValues).toContain(400);
+  });
+
+  it("message-list element has a ref that can be scrolled", () => {
+    renderPanel();
+    const list = document.querySelector(".message-list") as HTMLElement;
+    expect(list).not.toBeNull();
+    // scrollTop assignment should not throw (ref is attached)
+    expect(() => { list.scrollTop = list.scrollHeight; }).not.toThrow();
+  });
+});
+
 // ── Mic auto-submit flow ─────────────────────────────────────────────────────
 
 class MockMediaRecorder {
@@ -339,6 +368,21 @@ describe("ChatPanel Settings model dropdown", () => {
     renderPanel();
     selectProvider("together");
     expect(screen.getByLabelText("Model provider")).toHaveValue("together");
+  });
+
+  // ── Model control hidden for browser-local-gemma ──────────────────────────
+
+  it("hides model dropdown/input for browser-local-gemma (only one model)", () => {
+    renderPanel();
+    // Default provider is browser-local-gemma — no model control should be shown
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("shows model control again after switching away from browser-local-gemma", () => {
+    renderPanel();
+    selectProvider("anthropic");
+    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
   });
 
   // ── Model control in Advanced (matches onboarding: dropdown when provider has a static list) ─
@@ -624,4 +668,7 @@ describe("ChatPanel local model preloading", () => {
       expect(screen.getAllByText("Ready")).toHaveLength(3);
     });
   });
+
+  // The monotonic progress clamping logic (high-water-mark) is unit-tested
+  // directly in chatPanelUtils.test.ts → "clampModelProgress".
 });

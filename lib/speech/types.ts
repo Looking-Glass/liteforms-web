@@ -163,7 +163,8 @@ export type AsrResult = {
 
 export type ModelLoadProgress = {
   status: "idle" | "loading" | "ready" | "error";
-  progress: number;
+  /** Omitted for message-only updates (e.g. cache probe status). */
+  progress?: number;
   message?: string;
 };
 

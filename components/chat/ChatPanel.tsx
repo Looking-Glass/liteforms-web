@@ -24,9 +24,12 @@ import { DistilWhisperWorkerClient, KokoroWorkerClient } from "@/lib/speech/work
 import type { AsrConfig, AsrProviderId, TtsConfig, TtsProviderId } from "@/lib/speech";
 import { dispatchAvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
 import {
+  capPreloadUiProgress,
+  clampModelProgress,
   formatBytes,
   formatCacheUsage,
   isModelCacheName,
+  normalizeHuggingfaceProgress,
   updateEndpointMode
 } from "./chatPanelUtils";
 import type { CacheUsage } from "./chatPanelUtils";
@@ -114,6 +117,7 @@ export function ChatPanel({
   const audioChunksRef = useRef<BlobPart[]>([]);
   const lastAudioRef = useRef<Blob | null>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
   const localGemmaWorkerRef = useRef(new LocalGemmaWorkerClient());
   const kokoroWorkerRef = useRef(new KokoroWorkerClient());
   const distilWhisperWorkerRef = useRef(new DistilWhisperWorkerClient());
@@ -143,6 +147,12 @@ export function ChatPanel({
   useEffect(() => {
     onLocalModelLoadStateChange?.(localModelLoadState);
   }, [localModelLoadState, onLocalModelLoadStateChange]);
+
+  useEffect(() => {
+    if (messageListRef.current) {
+      messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   // Persist config only on actual user edits, not on the initial mount.
   // React fires child effects before parent effects, so on a page refresh this
@@ -177,7 +187,13 @@ export function ChatPanel({
 
     const updateLocalModel = (id: LocalModelId, patch: Partial<LocalModelLoadState>) => {
       if (preloadCancelledRef.current) return;
-      setLocalModelLoadState((models) => models.map((model) => (model.id === id ? { ...model, ...patch } : model)));
+      setLocalModelLoadState((models) =>
+        models.map((model) => {
+          if (model.id !== id) return model;
+          const progress = clampModelProgress(model.progress, model.status, patch.progress, patch.status);
+          return { ...model, ...patch, progress };
+        })
+      );
     };
 
     async function preloadLocalModel(id: LocalModelId, preload: () => Promise<void> | undefined) {
@@ -206,39 +222,43 @@ export function ChatPanel({
       // screen's Continue button can enable for any combination, including all-cloud configs.
       if (wantGemma) {
         await preloadLocalModel("gemma", () =>
-          localGemmaWorkerRef.current.preload?.({ model: LLM_PROVIDER_OPTIONS[0].defaultModel }, (progress) =>
+          localGemmaWorkerRef.current.preload?.({ model: LLM_PROVIDER_OPTIONS[0].defaultModel }, (progress) => {
+            const normalized = normalizeHuggingfaceProgress(progress.progress);
+            const capped = capPreloadUiProgress(normalized);
             updateLocalModel("gemma", {
-              status: progress.status,
-              progress: progress.progress,
+              status: "loading",
+              ...(capped !== undefined ? { progress: capped } : {}),
               message: progress.message ?? "Loading Gemma"
-            })
-          )
+            });
+          })
         );
       } else {
         updateLocalModel("gemma", { status: "ready", progress: 100, message: "Not used" });
       }
       if (wantKokoro) {
         await preloadLocalModel("kokoro", () =>
-          kokoroWorkerRef.current.preload?.(normalizedTtsConfig, (progress) =>
+          kokoroWorkerRef.current.preload?.(normalizedTtsConfig, (progress) => {
+            const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
             updateLocalModel("kokoro", {
-              status: progress.status,
-              progress: progress.progress,
+              status: "loading",
+              ...(capped !== undefined ? { progress: capped } : {}),
               message: progress.message ?? "Loading Kokoro"
-            })
-          )
+            });
+          })
         );
       } else {
         updateLocalModel("kokoro", { status: "ready", progress: 100, message: "Not used" });
       }
       if (wantDistilWhisper) {
         await preloadLocalModel("distil-whisper", () =>
-          distilWhisperWorkerRef.current.preload?.(normalizedAsrConfig, (progress) =>
+          distilWhisperWorkerRef.current.preload?.(normalizedAsrConfig, (progress) => {
+            const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
             updateLocalModel("distil-whisper", {
-              status: progress.status,
-              progress: progress.progress,
+              status: "loading",
+              ...(capped !== undefined ? { progress: capped } : {}),
               message: progress.message ?? "Loading Distil-Whisper"
-            })
-          )
+            });
+          })
         );
       } else {
         updateLocalModel("distil-whisper", { status: "ready", progress: 100, message: "Not used" });
@@ -770,18 +790,20 @@ export function ChatPanel({
             <summary>Advanced</summary>
             <div className="advanced-body">
               <div className="model-settings">
-                <label>
-                  Model
-                  {providerMeta.models ? (
-                    <select value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })}>
-                      {providerMeta.models.map((m) => (
-                        <option key={m.id} value={m.id}>{m.label}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
-                  )}
-                </label>
+                {config.provider !== "browser-local-gemma" && (
+                  <label>
+                    Model
+                    {providerMeta.models ? (
+                      <select value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })}>
+                        {providerMeta.models.map((m) => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
+                    )}
+                  </label>
+                )}
                 {config.provider !== "browser-local-gemma" ? (
                   <label>
                     Endpoint
@@ -881,7 +903,7 @@ export function ChatPanel({
 
       {/* ── Chat ── */}
       <div className="chat-header">Chat</div>
-      <div className="message-list">
+      <div className="message-list" ref={messageListRef}>
         {messages.map((message, index) => (
           <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
             <span>{message.content || (status === "streaming" && index === messages.length - 1 ? "…" : "")}</span>

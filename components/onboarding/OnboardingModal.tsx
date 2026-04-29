@@ -172,8 +172,11 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
 
   if (step === "loading") {
     const models = localModelLoadState ?? [];
-    const overallProgress =
-      models.length > 0 ? Math.round(models.reduce((sum, m) => sum + m.progress, 0) / models.length) : 0;
+    // Show overall preload progress across the local model queue.
+    const currentProgress =
+      models.length > 0 ? models.reduce((sum, model) => sum + model.progress, 0) / models.length : 0;
+    // Drop trailing zero (e.g. 50 -> "50%", 13.6789 -> "13.7%").
+    const displayProgress = parseFloat(currentProgress.toFixed(1));
 
     return (
       <div className="onboarding-overlay" role="dialog" aria-modal="true" aria-label="Loading models">
@@ -182,18 +185,20 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
           <p className="onboarding-intro">
             ~250 MB downloading to your browser cache. This only happens once — grab a coffee if your connection is slow.
           </p>
-          <progress className="onboarding-progress" value={overallProgress} max={100} aria-label={`${overallProgress}% complete`} />
-          <div className="onboarding-model-list">
+          <div className="onboarding-model-queue" aria-live="polite">
             {models.map((m) => (
-              <div className="onboarding-model-row" key={m.id}>
-                <span>{m.label}</span>
-                <span className={`onboarding-model-status ${m.status}`}>{m.message}</span>
+              <div key={m.id} className={`onboarding-queue-item onboarding-queue-item--${m.status}`}>
+                {m.label}
               </div>
             ))}
           </div>
+          {allModelsReady && (
+            <p className="onboarding-ready-message">All models ready</p>
+          )}
+          <progress className="onboarding-progress" value={currentProgress} max={100} aria-label={`${displayProgress}% complete`} />
           <div className="onboarding-footer onboarding-footer--end">
             <button type="button" className="onboarding-primary" disabled={!allModelsReady} onClick={onClose}>
-              {allModelsReady ? "Continue →" : `${overallProgress}%`}
+              {allModelsReady ? "Continue →" : `${displayProgress}%`}
             </button>
           </div>
         </div>
@@ -224,18 +229,20 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
                 ))}
               </select>
             </label>
-            <label>
-              Model
-              {providerMeta.models ? (
-                <select value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })}>
-                  {providerMeta.models.map((m) => (
-                    <option key={m.id} value={m.id}>{m.label}</option>
-                  ))}
-                </select>
-              ) : (
-                <input value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })} />
-              )}
-            </label>
+            {config.provider !== "browser-local-gemma" && (
+              <label>
+                Model
+                {providerMeta.models ? (
+                  <select value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })}>
+                    {providerMeta.models.map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })} />
+                )}
+              </label>
+            )}
             {showEndpoint && (
               <label>
                 Endpoint

@@ -42,9 +42,11 @@ function createReportingCache(label: string, onProgress?: CacheProgressCallback)
     async match(request) {
       const cache = await caches.open(cacheNamespace);
       const response = await cache.match(request);
+      // Per-file cache probes are not overall model load progress. Reporting 100 on
+      // hits and 0 on misses made the UI jump to ~99% (cap), so only surface
+      // a status message here.
       onProgress?.({
         status: "loading",
-        progress: response ? 100 : 0,
         message: response ? `${label} cache hit` : `${label} cache miss`
       });
       return response;
@@ -86,10 +88,11 @@ async function putWithProgress(
             break;
           }
           loaded += value.byteLength;
+          const pct = total && total > 0 ? (loaded / total) * 100 : undefined;
           progressCallback({
             loaded,
             total,
-            progress: total && total > 0 ? (loaded / total) * 100 : undefined
+            progress: pct
           });
           controller.enqueue(value);
         }

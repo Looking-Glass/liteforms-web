@@ -26,7 +26,6 @@ workerScope.addEventListener("message", async (event: MessageEvent<WorkerMessage
       // initialisation. Without this, the very first real generate() call incurs
       // an extra delay even though the model weights are already loaded.
       await warmupKokoro(tts, (payload as Omit<TtsWorkerRequest, "text">).voice);
-      workerScope.postMessage({ id, type: "progress", progress: { status: "ready", progress: 100, message: "Kokoro ready" } });
       workerScope.postMessage({ id, ok: true, result: undefined });
       return;
     }
@@ -100,14 +99,15 @@ async function warmupKokoro(tts: KokoroTTS, voice: string) {
 }
 
 function postProgress(id: number, info: ProgressInfo) {
-  const progress = typeof info.progress === "number" ? Math.max(0, Math.min(100, info.progress)) : 0;
   const file = info.file ?? info.name;
+  const progress =
+    typeof info.progress === "number" ? Math.max(0, Math.min(100, info.progress)) : undefined;
   workerScope.postMessage({
     id,
     type: "progress",
     progress: {
       status: "loading",
-      progress,
+      ...(progress !== undefined ? { progress } : {}),
       message: file ? `Kokoro ${file}` : "Kokoro loading"
     }
   });

@@ -15,6 +15,8 @@ type ProgressInfo = {
   file?: string;
   name?: string;
   message?: string;
+  loaded?: number;
+  total?: number;
 };
 
 const workerScope = self as unknown as {
@@ -34,7 +36,8 @@ workerScope.addEventListener("message", async (event: MessageEvent<WorkerMessage
   try {
     const generator = await getGenerator(payload.model, (progress) => postProgress(id, progress));
     if (type === "preload") {
-      workerScope.postMessage({ id, type: "progress", progress: { status: "ready", progress: 100, message: "Gemma ready" } });
+      // Ready + 100% is applied on the main thread when preload() resolves — avoid a
+      // duplicate progress message so the UI does not show 100% while still awaiting init.
       workerScope.postMessage({ id, ok: true, result: "" });
       return;
     }
@@ -68,15 +71,41 @@ function getGenerator(model: string, onProgress?: (progress: ProgressInfo) => vo
 
 async function createGenerator(model: string, onProgress?: (progress: ProgressInfo) => void): Promise<TextGenerator> {
   const transformers = (await import("@huggingface/transformers")) as Record<string, unknown>;
-  configureTransformersBrowserCache(transformers, "Gemma", onProgress);
+  // Aggregate per-file (loaded, total) byte counts into a single overall percentage so the
+  // UI sees one monotonic-ish curve instead of each file restarting from 0%. Transformers.js
+  // emits per-file progress events; we accumulate them here and forward an aggregate.
+  const aggregateOnProgress = onProgress ? createAggregatingProgress(onProgress) : undefined;
+  configureTransformersBrowserCache(transformers, "Gemma", aggregateOnProgress);
   if (model.toLowerCase().includes("gemma-4")) {
-    return createGemma4Generator(model, transformers, onProgress);
+    return createGemma4Generator(model, transformers, aggregateOnProgress);
   }
   const pipeline = transformers.pipeline as (task: string, model: string, options: Record<string, unknown>) => Promise<TextGenerator>;
   return pipeline("text-generation", model, {
     ...getLocalModelRuntimeOptions(model),
-    progress_callback: onProgress
+    progress_callback: aggregateOnProgress
   });
+}
+
+function createAggregatingProgress(onProgress: (progress: ProgressInfo) => void): (info: ProgressInfo) => void {
+  const fileBytes = new Map<string, { loaded: number; total: number }>();
+  return (info) => {
+    const file = info.file ?? info.name;
+    if (file && typeof info.loaded === "number" && typeof info.total === "number" && info.total > 0) {
+      fileBytes.set(file, { loaded: info.loaded, total: info.total });
+    } else if (file && info.status === "done") {
+      const existing = fileBytes.get(file);
+      if (existing) fileBytes.set(file, { loaded: existing.total, total: existing.total });
+    }
+    let totalLoaded = 0;
+    let totalExpected = 0;
+    for (const v of fileBytes.values()) {
+      totalLoaded += v.loaded;
+      totalExpected += v.total;
+    }
+    const aggregate =
+      totalExpected > 0 ? Math.min(100, (totalLoaded / totalExpected) * 100) : info.progress;
+    onProgress({ ...info, progress: aggregate });
+  };
 }
 
 type TextStreamerCtor = new (
@@ -163,14 +192,15 @@ function getInputLength(inputs: Record<string, unknown>) {
 }
 
 function postProgress(id: number, info: ProgressInfo) {
-  const progress = typeof info.progress === "number" ? Math.max(0, Math.min(100, info.progress)) : 0;
   const file = info.file ?? info.name;
+  const progress =
+    typeof info.progress === "number" ? Math.max(0, Math.min(100, info.progress)) : undefined;
   workerScope.postMessage({
     id,
     type: "progress",
     progress: {
       status: "loading",
-      progress,
+      ...(progress !== undefined ? { progress } : {}),
       message: info.message ?? (file ? `Gemma ${file}` : "Gemma loading")
     }
   });

@@ -24,7 +24,6 @@ workerScope.addEventListener("message", async (event: MessageEvent<WorkerMessage
   try {
     if (type === "preload") {
       await getTranscriber(payload, (progress) => postProgress(id, progress));
-      workerScope.postMessage({ id, type: "progress", progress: { status: "ready", progress: 100, message: "Distil-Whisper ready" } });
       workerScope.postMessage({ id, ok: true, result: undefined });
       return;
     }
@@ -86,14 +85,15 @@ async function getTranscriber(request: Omit<AsrWorkerRequest, "audio">, onProgre
 }
 
 function postProgress(id: number, info: ProgressInfo) {
-  const progress = typeof info.progress === "number" ? Math.max(0, Math.min(100, info.progress)) : 0;
   const file = info.file ?? info.name;
+  const progress =
+    typeof info.progress === "number" ? Math.max(0, Math.min(100, info.progress)) : undefined;
   workerScope.postMessage({
     id,
     type: "progress",
     progress: {
       status: "loading",
-      progress,
+      ...(progress !== undefined ? { progress } : {}),
       message: info.message ?? (file ? `Distil-Whisper ${file}` : "Distil-Whisper loading")
     }
   });
