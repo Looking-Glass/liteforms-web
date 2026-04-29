@@ -1,5 +1,6 @@
 import type { Object3D, Scene } from "three";
 import type { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { setMeshShadowFlags } from "./shadowSetup";
 
 /**
  * Loads a plain GLB environment model and places it in the scene using the
@@ -18,4 +19,5 @@ export async function loadEnvironmentGlb(
   envScene.scale.copy(referenceObject.scale);
   envScene.position.copy(referenceObject.position);
   scene.add(envScene);
+  setMeshShadowFlags(envScene, true, true);
 }

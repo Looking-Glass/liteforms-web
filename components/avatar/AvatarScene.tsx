@@ -33,6 +33,11 @@ import {
 } from "@/lib/avatar/lookingGlassIntegration";
 import type { LookingGlassFocalPoint } from "@/lib/avatar/lookingGlassIntegration";
 import { loadEnvironmentGlb } from "@/lib/avatar/environmentLoader";
+import {
+  configureRendererShadows,
+  configureLightShadow,
+  setMeshShadowFlags,
+} from "@/lib/avatar/shadowSetup";
 
 type AvatarSceneProps = {
   modelUrl?: string;
@@ -58,6 +63,9 @@ type AvatarDebugWindow = Window & {
   getHologramCameraPosition?: () => { x: number; y: number; z: number };
   setPreviewTarget?: (x: number, y: number, z: number) => void;
   getPreviewTarget?: () => { x: number; y: number; z: number };
+  setKeyLightPosition?: (x: number, y: number, z: number) => void;
+  setFillLightPosition?: (x: number, y: number, z: number) => void;
+  setAmbientIntensity?: (intensity: number) => void;
 };
 
 export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) {
@@ -108,6 +116,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
 
       win.XRWebGLBinding = savedBinding;
 
+      configureRendererShadows(renderer);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.outputColorSpace = "srgb";
       renderer.xr.enabled = true;
@@ -117,10 +126,6 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       scene.background = new Color("#15130f");
 
       let lockedPhi = Math.PI / 2;
-      const radiansToDegrees = (radians: number) => radians * 180 / Math.PI;
-      const formatVector = (v: { x: number; y: number; z: number }) =>
-        `(${v.x.toFixed(3)}, ${v.y.toFixed(3)}, ${v.z.toFixed(3)})`;
-
       const lockPolarAngle = (cam: PerspectiveCamera, ctrl: OrbitControls) => {
         const dy = cam.position.y - ctrl.target.y;
         const dxz = Math.sqrt(
@@ -169,48 +174,9 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
 
       controls.addEventListener("change", () => {
         enforceLockedPolarAngle(camera, controls!);
-        const p = camera.position;
-        const r = camera.rotation;
-        const dist = p.distanceTo(controls!.target);
-        console.log(
-          "[Preview Camera]",
-          `pos=(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})`,
-          `rot=(${(r.x * 180 / Math.PI).toFixed(1)}°, ${(r.y * 180 / Math.PI).toFixed(1)}°, ${(r.z * 180 / Math.PI).toFixed(1)}°)`,
-          `orbitDist=${dist.toFixed(3)}`,
-          `target=(${controls!.target.x.toFixed(3)}, ${controls!.target.y.toFixed(3)}, ${controls!.target.z.toFixed(3)})`
-        );
       });
 
-      let lastLookingGlassCameraLog = "";
-      const logLookingGlassCamera = () => {
-        const cameraArrayState = computeLookingGlassCameraArrayState({
-          targetX: LookingGlassConfig.targetX,
-          targetY: LookingGlassConfig.targetY,
-          targetZ: LookingGlassConfig.targetZ,
-          targetDiam: LookingGlassConfig.targetDiam,
-          trackballX: LookingGlassConfig.trackballX,
-          trackballY: LookingGlassConfig.trackballY,
-          fovy: LookingGlassConfig.fovy,
-          viewCone: LookingGlassConfig.viewCone,
-          numViews: LookingGlassConfig.numViews,
-        });
-        const r = cameraArrayState.rotationRadians;
-        const logParts = [
-          `centerPos=${formatVector(cameraArrayState.centerPosition)}`,
-          `rot=(${radiansToDegrees(r.x).toFixed(1)}deg, ${radiansToDegrees(r.y).toFixed(1)}deg, ${radiansToDegrees(r.z).toFixed(1)}deg)`,
-          `orbitDist=${cameraArrayState.orbitDistance.toFixed(3)}`,
-          `target=${formatVector(cameraArrayState.target)}`,
-          `lkgTrackball=(${radiansToDegrees(LookingGlassConfig.trackballX).toFixed(1)}deg, ${radiansToDegrees(LookingGlassConfig.trackballY).toFixed(1)}deg)`,
-          `firstView=${formatVector(cameraArrayState.firstViewPosition)}`,
-          `lastView=${formatVector(cameraArrayState.lastViewPosition)}`,
-        ];
-        const signature = logParts.join("|");
-        if (signature === lastLookingGlassCameraLog) return;
-
-        lastLookingGlassCameraLog = signature;
-        console.log("[Camera]", ...logParts);
-      };
-      const lkgConfigChangeListener = () => logLookingGlassCamera();
+      const lkgConfigChangeListener = () => {};
       LookingGlassConfig.addEventListener("on-config-changed", lkgConfigChangeListener);
       lkgConfigChangeCleanup = () => {
         LookingGlassConfig.removeEventListener("on-config-changed", lkgConfigChangeListener);
@@ -234,12 +200,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         LookingGlassConfig.updateViewControls(
           withLookingGlassCameraPose(currentLookingGlassFocalPoint(), position, target)
         );
-        logLookingGlassCamera();
       };
 
       const applyHologramTarget = (x: number, y: number, z: number) => {
         LookingGlassConfig.updateViewControls({ targetX: x, targetY: y, targetZ: z });
-        logLookingGlassCamera();
       };
       const applyHologramFocalTarget = (x: number, y: number, z: number) => {
         updateLookingGlassCameraPose(
@@ -267,7 +231,6 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       const applyPreviewTarget = (x: number, y: number, z: number) => {
         controls!.target.set(x, y, z);
         camera.lookAt(controls!.target);
-        logLookingGlassCamera();
       };
 
       const debugWindow = window as AvatarDebugWindow;
@@ -294,6 +257,21 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         return { x: target.x, y: target.y, z: target.z };
       };
       debugWindow.getPreviewTarget = getPreviewTarget;
+      const applyKeyLightPosition = (x: number, y: number, z: number) => {
+        keyLight.position.set(x, y, z);
+        console.log(`[Key Light] position set to (${x}, ${y}, ${z})`);
+      };
+      debugWindow.setKeyLightPosition = applyKeyLightPosition;
+      const applyFillLightPosition = (x: number, y: number, z: number) => {
+        fillLight.position.set(x, y, z);
+        console.log(`[Fill Light] position set to (${x}, ${y}, ${z})`);
+      };
+      debugWindow.setFillLightPosition = applyFillLightPosition;
+      const applyAmbientIntensity = (intensity: number) => {
+        ambientLight.intensity = intensity;
+        console.log(`[Ambient Light] intensity set to ${intensity}`);
+      };
+      debugWindow.setAmbientIntensity = applyAmbientIntensity;
       debugWindowCleanup = () => {
         if (debugWindow.setHologramTarget === applyHologramTarget) {
           delete debugWindow.setHologramTarget;
@@ -319,13 +297,23 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         if (debugWindow.getPreviewTarget === getPreviewTarget) {
           delete debugWindow.getPreviewTarget;
         }
+        if (debugWindow.setKeyLightPosition === applyKeyLightPosition) {
+          delete debugWindow.setKeyLightPosition;
+        }
+        if (debugWindow.setFillLightPosition === applyFillLightPosition) {
+          delete debugWindow.setFillLightPosition;
+        }
+        if (debugWindow.setAmbientIntensity === applyAmbientIntensity) {
+          delete debugWindow.setAmbientIntensity;
+        }
       };
 
-      const ambientLight = new AmbientLight("#fff6e5", 1.8);
+      const ambientLight = new AmbientLight("#fff6e5", 1.2);
       const keyLight = new DirectionalLight("#ffffff", 2.4);
-      keyLight.position.set(2, 3, 4);
-      const fillLight = new DirectionalLight("#70d6c5", 0.9);
-      fillLight.position.set(-3, 2, 2);
+      keyLight.position.set(0.5, 0.5, 2);
+      configureLightShadow(keyLight);
+      const fillLight = new DirectionalLight("#70d6c5", 1.0);
+      fillLight.position.set(-2, 0.5, 3);
       scene.add(ambientLight, keyLight, fillLight);
 
       // Suppress the Looking Glass Controls panel that the polyfill appends to document.body
@@ -393,6 +381,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           vrmRef.current = loadedVrm;
           VRMUtils.rotateVRM0(loadedVrm);
           scene.add(loadedVrm.scene);
+          setMeshShadowFlags(loadedVrm.scene, true, false);
           runtimeAnimator?.dispose();
           runtimeAnimator = new VrmRuntimeAnimator(loadedVrm);
           frameModel(loadedVrm.scene);
@@ -408,21 +397,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
             ),
             LOOKING_GLASS_FOCAL_TARGET
           );
-          console.log(
-            "[LKG config BEFORE update]",
-            `trackballX=${(LookingGlassConfig.trackballX * 180 / Math.PI).toFixed(2)}°`,
-            `trackballY=${(LookingGlassConfig.trackballY * 180 / Math.PI).toFixed(2)}°`,
-            `targetDiam=${LookingGlassConfig.targetDiam?.toFixed(3)}`
-          );
           LookingGlassConfig.updateViewControls(focalPoint);
-          console.log(
-            "[LKG config AFTER update]",
-            `trackballX=${(LookingGlassConfig.trackballX * 180 / Math.PI).toFixed(2)}°`,
-            `target=(${focalPoint.targetX.toFixed(3)}, ${focalPoint.targetY.toFixed(3)}, ${focalPoint.targetZ.toFixed(3)})`,
-            `targetDiam=${focalPoint.targetDiam.toFixed(3)}`
-          );
-
-          logLookingGlassCamera();
 
           const expressionSummaries = getVrmExpressionDebugSummaries(loadedVrm.expressionManager);
           const missingVrm0MouthMorphs = getMissingVrm0MouthMorphTargets(loadedVrm.scene);
@@ -485,7 +460,6 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           container.style.aspectRatio = `${sw} / ${sh}`;
           container.style.maxHeight = `${Math.floor(window.innerHeight * 0.85)}px`;
           resize();
-          logLookingGlassCamera();
         } else if (current === "ENTER LOOKING GLASS" || current === "ENTER VR") {
           isLkgSessionActive = false;
           container.style.aspectRatio = "";

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { Group, Scene, Vector3 } from "three";
+import { Group, Mesh, Scene, Vector3 } from "three";
 
 import { loadEnvironmentGlb } from "./environmentLoader";
 
@@ -54,5 +54,55 @@ describe("loadEnvironmentGlb", () => {
     await loadEnvironmentGlb("/models/Alcove.glb", loader as any, parentScene, reference);
 
     expect(parentScene.children).toContain(envScene);
+  });
+
+  it("sets castShadow=true on all Mesh children of the loaded GLB", async () => {
+    const envScene = new Group();
+    const meshA = new Mesh();
+    const inner = new Group();
+    const meshB = new Mesh();
+    inner.add(meshB);
+    envScene.add(meshA, inner);
+    const loader = makeLoader(envScene);
+    const parentScene = new Scene();
+    const reference = new Group();
+
+    await loadEnvironmentGlb("/models/Alcove.glb", loader as any, parentScene, reference);
+
+    expect(meshA.castShadow).toBe(true);
+    expect(meshB.castShadow).toBe(true);
+  });
+
+  it("sets receiveShadow=true on all Mesh children of the loaded GLB", async () => {
+    const envScene = new Group();
+    const meshA = new Mesh();
+    const inner = new Group();
+    const meshB = new Mesh();
+    inner.add(meshB);
+    envScene.add(meshA, inner);
+    const loader = makeLoader(envScene);
+    const parentScene = new Scene();
+    const reference = new Group();
+
+    await loadEnvironmentGlb("/models/Alcove.glb", loader as any, parentScene, reference);
+
+    expect(meshA.receiveShadow).toBe(true);
+    expect(meshB.receiveShadow).toBe(true);
+  });
+
+  it("does not set shadow flags on non-Mesh (Group) nodes", async () => {
+    const envScene = new Group();
+    const group = new Group();
+    group.castShadow = false;
+    group.receiveShadow = false;
+    envScene.add(group);
+    const loader = makeLoader(envScene);
+    const parentScene = new Scene();
+    const reference = new Group();
+
+    await loadEnvironmentGlb("/models/Alcove.glb", loader as any, parentScene, reference);
+
+    expect(group.castShadow).toBe(false);
+    expect(group.receiveShadow).toBe(false);
   });
 });
