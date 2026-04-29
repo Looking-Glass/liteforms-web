@@ -18,17 +18,20 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import type { VRM } from "@pixiv/three-vrm";
+import { VRMAnimationLoaderPlugin } from "@pixiv/three-vrm-animation";
 import { getVrmExpressionDebugSummaries } from "@/lib/avatar/vrmExpressionController";
 import { getMissingVrm0MouthMorphTargets } from "@/lib/avatar/morphTargetController";
 import { avatarLipSyncEventName } from "@/lib/avatar/lipSyncEvents";
 import type { AvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
 import { VrmRuntimeAnimator } from "@/lib/avatar/vrmRuntimeAnimator";
+import { loadVrmAnimationClip, VrmIdleAnimator } from "@/lib/avatar/vrmAnimationLoader";
 
 type AvatarSceneProps = {
   modelUrl?: string;
 };
 
 const DEFAULT_MODEL_URL = "/models/lobsterEdit.vrm";
+const DEFAULT_IDLE_ANIMATION_URL = "/animations/idle_loop.vrma";
 
 export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,6 +50,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let disposed = false;
     let currentVrm: VRM | undefined;
     let runtimeAnimator: VrmRuntimeAnimator | undefined;
+    let idleAnimator: VrmIdleAnimator | undefined;
 
     const scene = new Scene();
     scene.background = new Color("#15130f");
@@ -111,6 +115,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
+    loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
 
     loader.load(
       modelUrl,
@@ -146,6 +151,14 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           }
         }
         setStatus("");
+
+        void loadVrmAnimationClip(DEFAULT_IDLE_ANIMATION_URL, loadedVrm, loader).then((clip) => {
+          if (disposed || !clip) {
+            return;
+          }
+          idleAnimator?.dispose();
+          idleAnimator = new VrmIdleAnimator(loadedVrm, clip);
+        });
       },
       undefined,
       () => {
@@ -160,6 +173,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       const delta = clock.getDelta();
 
       controls.update();
+      idleAnimator?.update(delta);
       runtimeAnimator?.update(delta);
       currentVrm?.update(delta);
       renderer.render(scene, camera);
@@ -173,6 +187,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       window.cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", resize);
       window.removeEventListener(avatarLipSyncEventName, onLipSyncFrame);
+      idleAnimator?.dispose();
       runtimeAnimator?.dispose();
       controls.dispose();
       renderer.dispose();
