@@ -7,7 +7,6 @@ import {
   Clock,
   Color,
   DirectionalLight,
-  GridHelper,
   PerspectiveCamera,
   Scene,
   Vector3,
@@ -26,7 +25,7 @@ import { avatarLipSyncEventName } from "@/lib/avatar/lipSyncEvents";
 import type { AvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
 import { VrmRuntimeAnimator } from "@/lib/avatar/vrmRuntimeAnimator";
 import { loadVrmAnimationClip, VrmIdleAnimator } from "@/lib/avatar/vrmAnimationLoader";
-import { computeLookingGlassFocalPoint } from "@/lib/avatar/lookingGlassIntegration";
+import { computeLookingGlassFocalPoint, computeLkgInlineViewSize, LKG_INLINE_ASPECT } from "@/lib/avatar/lookingGlassIntegration";
 
 type AvatarSceneProps = {
   modelUrl?: string;
@@ -59,6 +58,9 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let idleAnimator: VrmIdleAnimator | undefined;
     let resizeListener: (() => void) | undefined;
     let lipSyncListener: ((event: Event) => void) | undefined;
+    let lkgControlsObserver: MutationObserver | undefined;
+    let vrButtonTextObserver: MutationObserver | undefined;
+    let isLkgPresenting = false;
 
     void import("@lookingglass/webxr").then(({ LookingGlassWebXRPolyfill, LookingGlassConfig }) => {
       if (disposed) return;
@@ -107,14 +109,28 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       fillLight.position.set(-3, 2, 2);
       scene.add(ambientLight, keyLight, fillLight);
 
-      const grid = new GridHelper(4, 20, "#3a362d", "#25211a");
-      grid.position.y = -0.02;
-      scene.add(grid);
+      // Suppress the Looking Glass Controls panel that the polyfill appends to document.body
+      lkgControlsObserver = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          for (const node of mutation.addedNodes) {
+            if ((node as HTMLElement).id === "LookingGlassWebXRControls") {
+              (node as HTMLElement).remove();
+            }
+          }
+        }
+      });
+      lkgControlsObserver.observe(document.body, { childList: true });
 
       const resize = () => {
         const { clientWidth, clientHeight } = container;
-        renderer!.setSize(clientWidth, clientHeight, false);
-        camera.aspect = clientWidth / Math.max(clientHeight, 1);
+        if (isLkgPresenting) {
+          const { width, height } = computeLkgInlineViewSize(clientWidth, clientHeight);
+          renderer!.setSize(width, height, false);
+          camera.aspect = LKG_INLINE_ASPECT;
+        } else {
+          renderer!.setSize(clientWidth, clientHeight, false);
+          camera.aspect = clientWidth / Math.max(clientHeight, 1);
+        }
         camera.updateProjectionMatrix();
       };
       resizeListener = resize;
@@ -205,6 +221,36 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       vrButton = VRButton.createButton(renderer);
       document.body.appendChild(vrButton);
 
+      // Override the VRButton text. The LKG polyfill asynchronously rewrites
+      // innerHTML to "ENTER/EXIT LOOKING GLASS"; watch for those mutations and
+      // replace with our own labels.
+      const lkgButtonTextMap: Record<string, string> = {
+        "ENTER VR": "Hologramiphy",
+        "ENTER LOOKING GLASS": "Hologramiphy",
+        "EXIT VR": "Make it boring",
+        "EXIT LOOKING GLASS": "Make it boring",
+      };
+      vrButtonTextObserver = new MutationObserver(() => {
+        if (!vrButton) return;
+        const current = vrButton.innerHTML.trim();
+        const override = lkgButtonTextMap[current];
+        if (override) vrButton.innerHTML = override;
+      });
+      vrButtonTextObserver.observe(vrButton, { childList: true, subtree: true, characterData: true });
+      // Apply immediately in case the button already has text
+      const initialText = vrButton.innerHTML.trim();
+      if (lkgButtonTextMap[initialText]) vrButton.innerHTML = lkgButtonTextMap[initialText];
+
+      // Update resize and camera aspect when entering/exiting a LKG XR session.
+      renderer.xr.addEventListener("sessionstart", () => {
+        isLkgPresenting = true;
+        resize();
+      });
+      renderer.xr.addEventListener("sessionend", () => {
+        isLkgPresenting = false;
+        resize();
+      });
+
       // 4. Use renderer.setAnimationLoop — required for WebXR sessions.
       const clock = new Clock();
       renderer.setAnimationLoop(() => {
@@ -222,6 +268,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       renderer?.setAnimationLoop(null);
       if (resizeListener) window.removeEventListener("resize", resizeListener);
       if (lipSyncListener) window.removeEventListener(avatarLipSyncEventName, lipSyncListener);
+      lkgControlsObserver?.disconnect();
+      vrButtonTextObserver?.disconnect();
       idleAnimator?.dispose();
       runtimeAnimator?.dispose();
       controls?.dispose();
