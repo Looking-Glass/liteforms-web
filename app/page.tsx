@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AvatarScene } from "@/components/avatar/AvatarScene";
 import { ChatPanel, initialLocalModelLoadState } from "@/components/chat/ChatPanel";
 import type { CharacterConfig, LocalModelLoadState } from "@/components/chat/ChatPanel";
@@ -8,6 +8,9 @@ import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import type { BaseProviderConfig } from "@/lib/llm";
 import type { AsrConfig, TtsConfig } from "@/lib/speech";
 import { saveSessionConfig, loadSessionConfig } from "@/lib/storage/sessionConfig";
+import { saveCharacterConfig, loadCharacterConfig } from "@/lib/storage/characterConfig";
+import { createIndexedDbVrmRepository } from "@/lib/storage/indexedDbVrmRepository";
+import type { VrmRepository } from "@/lib/storage/vrmRepository";
 
 const onboardingStorageKey = "liteforms.onboardingMode";
 
@@ -20,7 +23,13 @@ const defaultCharacter: CharacterConfig = {
 
 export default function HomePage() {
   const [modelUrl, setModelUrl] = useState<string | undefined>(undefined);
-  const [character, setCharacter] = useState<CharacterConfig>(defaultCharacter);
+  const [restoredVrmFileName, setRestoredVrmFileName] = useState<string | undefined>(undefined);
+  const vrmRepoRef = useRef<VrmRepository | null>(null);
+  const [character, setCharacter] = useState<CharacterConfig>(() => {
+    const saved = loadCharacterConfig();
+    if (!saved) return defaultCharacter;
+    return { name: saved.name, pronouns: saved.pronouns, personality: saved.personality, greeting: saved.greeting };
+  });
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [shouldPreloadLocalModels, setShouldPreloadLocalModels] = useState(false);
   const [initialLlmConfig, setInitialLlmConfig] = useState<BaseProviderConfig | undefined>(undefined);
@@ -48,6 +57,18 @@ export default function HomePage() {
       }
       setShouldPreloadLocalModels(true);
     }
+
+    createIndexedDbVrmRepository().then((repo) => {
+      vrmRepoRef.current = repo;
+      return repo.load();
+    }).then((stored) => {
+      if (!stored) return;
+      const blob = new Blob([stored.arrayBuffer]);
+      setModelUrl(URL.createObjectURL(blob));
+      setRestoredVrmFileName(stored.fileName);
+    }).catch(() => {
+      // IndexedDB may be unavailable (private browsing, storage quota, etc.)
+    });
   }, []);
 
   const handleLocalModelLoadStateChange = useCallback((state: LocalModelLoadState[]) => {
@@ -60,6 +81,25 @@ export default function HomePage() {
     if (savedMode === "custom") {
       saveSessionConfig({ llm, tts, asr });
     }
+  }, []);
+
+  const handleCharacterChange = useCallback((next: CharacterConfig) => {
+    setCharacter(next);
+    saveCharacterConfig(next);
+  }, []);
+
+  const handleVrmFileLoad = useCallback((file: File) => {
+    file.arrayBuffer().then((buf) => {
+      vrmRepoRef.current?.save(buf, file.name).catch(() => {
+        // Storage failure is non-fatal; the VRM is still loaded for this session.
+      });
+    }).catch(() => {});
+  }, []);
+
+  const handleVrmReset = useCallback(() => {
+    setModelUrl(undefined);
+    setRestoredVrmFileName(undefined);
+    vrmRepoRef.current?.clear().catch(() => {});
   }, []);
 
   function handleUseBuiltIn() {
@@ -94,8 +134,11 @@ export default function HomePage() {
       <ChatPanel
         key={chatPanelKey}
         character={character}
-        onCharacterChange={setCharacter}
+        onCharacterChange={handleCharacterChange}
         onModelUrlChange={setModelUrl}
+        initialVrmFileName={restoredVrmFileName}
+        onVrmFileLoad={handleVrmFileLoad}
+        onVrmReset={handleVrmReset}
         shouldPreloadLocalModels={shouldPreloadLocalModels}
         preloadSessionId={chatPanelKey}
         initialLlmConfig={initialLlmConfig}

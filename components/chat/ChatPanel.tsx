@@ -45,6 +45,12 @@ type ChatPanelProps = {
   character: CharacterConfig;
   onCharacterChange: (character: CharacterConfig) => void;
   onModelUrlChange: (url: string) => void;
+  /** Filename to display for a VRM that was restored from persistent storage. */
+  initialVrmFileName?: string;
+  /** Called when the user loads a new VRM file so the caller can persist it. */
+  onVrmFileLoad?: (file: File) => void;
+  /** Called when the user resets to the built-in default VRM model. */
+  onVrmReset?: () => void;
   shouldPreloadLocalModels?: boolean;
   preloadSessionId?: number;
   initialLlmConfig?: BaseProviderConfig;
@@ -84,6 +90,9 @@ export function ChatPanel({
   character,
   onCharacterChange,
   onModelUrlChange,
+  initialVrmFileName,
+  onVrmFileLoad,
+  onVrmReset,
   shouldPreloadLocalModels = false,
   preloadSessionId = 0,
   initialLlmConfig,
@@ -111,7 +120,11 @@ export function ChatPanel({
     unknownCount: 0
   });
   const [isClearingCache, setIsClearingCache] = useState(false);
-  const [vrmFileName, setVrmFileName] = useState("");
+  const [vrmFileName, setVrmFileName] = useState(initialVrmFileName ?? "");
+
+  useEffect(() => {
+    if (initialVrmFileName) setVrmFileName(initialVrmFileName);
+  }, [initialVrmFileName]);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
@@ -634,6 +647,7 @@ export function ChatPanel({
     const url = URL.createObjectURL(file);
     setVrmFileName(file.name);
     onModelUrlChange(url);
+    onVrmFileLoad?.(file);
     event.target.value = "";
   }
 
@@ -698,6 +712,18 @@ export function ChatPanel({
                 <button type="button" className="btn-ghost" onClick={() => vrmInputRef.current?.click()}>
                   Load VRM
                 </button>
+                {vrmFileName && (
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => {
+                      setVrmFileName("");
+                      onVrmReset?.();
+                    }}
+                  >
+                    Reset
+                  </button>
+                )}
                 <span className="vrm-filename">{vrmFileName || "Default (lobster)"}</span>
               </div>
             </div>

@@ -161,6 +161,50 @@ describe("ChatPanel VRM loader", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("does not show a Reset button when no custom VRM is loaded", () => {
+    renderPanel();
+    expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
+  });
+
+  it("shows a Reset button after a custom VRM is loaded", () => {
+    renderPanel();
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn().mockReturnValue("blob:x") });
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const fakeFile = new File([""], "custom.vrm", { type: "application/octet-stream" });
+    Object.defineProperty(fileInput, "files", { value: [fakeFile], configurable: true });
+    fireEvent.change(fileInput);
+
+    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
+
+  it("clicking Reset restores default filename and calls onVrmReset", () => {
+    const onVrmReset = vi.fn();
+    const onModelUrlChange = vi.fn();
+    render(
+      <ChatPanel
+        character={defaultCharacter}
+        onCharacterChange={vi.fn()}
+        onModelUrlChange={onModelUrlChange}
+        onVrmReset={onVrmReset}
+      />
+    );
+
+    vi.stubGlobal("URL", { ...URL, createObjectURL: vi.fn().mockReturnValue("blob:x") });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const fakeFile = new File([""], "custom.vrm", { type: "application/octet-stream" });
+    Object.defineProperty(fileInput, "files", { value: [fakeFile], configurable: true });
+    fireEvent.change(fileInput);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    expect(onVrmReset).toHaveBeenCalledOnce();
+    expect(screen.getByText("Default (lobster)")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reset" })).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+  });
 });
 
 // ── OpenClaw persona handling ────────────────────────────────────────────────
