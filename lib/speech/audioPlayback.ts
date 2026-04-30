@@ -132,7 +132,7 @@ function connectRmsFallback(source: AudioBufferSourceNode, context: AudioContext
     }
 
     analyser.getByteTimeDomainData(samples);
-    onLipSyncFrame(createRmsLipSyncFrame(calculateRms(samples)));
+    onLipSyncFrame(createRmsLipSyncFrame(calculateVisemeWeight(calculateRms(samples))));
     window.requestAnimationFrame(update);
   };
 

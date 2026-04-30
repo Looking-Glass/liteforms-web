@@ -155,6 +155,29 @@ describe("audio playback", () => {
     expect(onLipSyncFrame).toHaveBeenCalledWith(expect.objectContaining({ target: "viseme_aa", vrmExpression: "aa" }));
     expect(analyser.disconnect).toHaveBeenCalled();
   });
+
+  it("amplifies RMS fallback weight via calculateVisemeWeight, matching the word-timing path", async () => {
+    // samples [128, 152]: RMS ≈ 0.133; raw rms would be tiny but calculateVisemeWeight amplifies it to ~0.68
+    const source = createSource();
+    const analyser = createAnalyser([128, 152]);
+    const context = {
+      decodeAudioData: vi.fn(async () => "decoded-buffer"),
+      createBufferSource: vi.fn(() => source),
+      createAnalyser: vi.fn(() => analyser),
+      destination: {}
+    };
+    Reflect.set(globalThis, "window", { requestAnimationFrame: vi.fn() });
+    const onLipSyncFrame = vi.fn();
+
+    await playTtsResult({ audio: new ArrayBuffer(8), mimeType: "audio/wav" }, {
+      audioContextFactory: () => context as unknown as AudioContext,
+      onLipSyncFrame
+    });
+
+    const weight = onLipSyncFrame.mock.calls[0][0].weight as number;
+    // weight should be amplified: (rms - 0.01) / 0.18, not the raw rms (~0.133)
+    expect(weight).toBeGreaterThan(0.5);
+  });
 });
 
 function createSource(autoEnd = true) {
