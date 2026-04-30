@@ -101,7 +101,7 @@ export function ChatPanel({
   onLocalModelLoadStateChange,
   onConfigChange
 }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([{ role: "assistant", content: character.greeting }]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [speechStatus, setSpeechStatus] = useState<SpeechStatus>("idle");
   const [error, setError] = useState("");
@@ -951,10 +951,14 @@ export function ChatPanel({
           type="button"
           className={`mic-btn${speechStatus === "listening" ? " listening" : ""}`}
           aria-label={speechStatus === "listening" ? "Release to send" : "Hold to talk"}
-          onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); void startMicRecording(); }}
+          onPointerDown={(e) => {
+            if (status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking") return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            void startMicRecording();
+          }}
           onPointerUp={() => stopMicRecording()}
           onPointerLeave={() => { if (speechStatus === "listening") stopMicRecording(); }}
-          disabled={speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking"}
+          disabled={status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking"}
         >
           <span style={{ fontSize: "16px", lineHeight: 1 }}>{speechStatus === "listening" ? "◉" : "🎙"}</span>
           <span style={{ fontSize: "9px", letterSpacing: "0.06em", lineHeight: 1, fontFamily: "var(--font-mono, monospace)" }}>
