@@ -672,3 +672,4 @@ describe("ChatPanel local model preloading", () => {
   // The monotonic progress clamping logic (high-water-mark) is unit-tested
   // directly in chatPanelUtils.test.ts → "clampModelProgress".
 });
+

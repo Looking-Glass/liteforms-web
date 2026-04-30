@@ -73,6 +73,8 @@ type AvatarDebugWindow = Window & {
 export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const vrmRef = useRef<VRM | undefined>(undefined);
+  const idleAnimatorRef = useRef<VrmIdleAnimator | undefined>(undefined);
+  const loaderRef = useRef<GLTFLoader | undefined>(undefined);
   const warnedMissingMorphsRef = useRef(new Set<string>());
   const [status, setStatus] = useState("Loading avatar");
 
@@ -366,6 +368,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       const loader = new GLTFLoader();
       loader.register((parser) => new VRMLoaderPlugin(parser));
       loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+      loaderRef.current = loader;
 
       loader.load(
         modelUrl,
@@ -427,7 +430,9 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           void loadVrmAnimationClip(DEFAULT_IDLE_ANIMATION_URL, loadedVrm, loader).then((clip) => {
             if (disposed || !clip) return;
             idleAnimator?.dispose();
+            idleAnimatorRef.current?.dispose();
             idleAnimator = new VrmIdleAnimator(loadedVrm, clip);
+            idleAnimatorRef.current = idleAnimator;
           });
         },
         undefined,
@@ -511,7 +516,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         // but snap camera back to the locked elevation (phi) every frame.
         enforceLockedPolarAngle(camera, controls!);
 
-        idleAnimator?.update(delta);
+        idleAnimatorRef.current?.update(delta);
         runtimeAnimator?.update(delta);
         currentVrm?.update(delta);
         renderer!.render(scene, camera);
@@ -531,6 +536,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       container.style.aspectRatio = "";
       container.style.maxHeight = "";
       idleAnimator?.dispose();
+      idleAnimatorRef.current = undefined;
+      loaderRef.current = undefined;
       runtimeAnimator?.dispose();
       controls?.dispose();
       renderer?.dispose();
