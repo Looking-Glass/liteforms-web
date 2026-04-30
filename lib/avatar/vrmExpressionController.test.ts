@@ -6,7 +6,8 @@ import {
   getVrmExpressionDebugSummaries,
   getVrmExpressionNames,
   hasBoundVrmExpression,
-  resetVrmExpressions
+  resetVrmExpressions,
+  resolveVrmMouthExpressionName
 } from "./vrmExpressionController";
 
 describe("VRM expression controller", () => {
@@ -66,6 +67,50 @@ describe("VRM expression controller", () => {
         }
       })
     ).toEqual(["aa(2)", "blink(0)"]);
+  });
+
+  it("resolves VRM mouth expressions under VRM 0.x uppercase names", () => {
+    const expressionManager = {
+      setValue: vi.fn(),
+      expressionMap: {
+        A: { binds: [{}] },
+        E: { binds: [{}] },
+        I: { binds: [{}] },
+        O: { binds: [{}] },
+        U: { binds: [{}] }
+      }
+    };
+
+    expect(resolveVrmMouthExpressionName(expressionManager, "aa")).toBe("A");
+    expect(resolveVrmMouthExpressionName(expressionManager, "ee")).toBe("E");
+    expect(resolveVrmMouthExpressionName(expressionManager, "ih")).toBe("I");
+    expect(resolveVrmMouthExpressionName(expressionManager, "oh")).toBe("O");
+    expect(resolveVrmMouthExpressionName(expressionManager, "ou")).toBe("U");
+  });
+
+  it("resolves VRM mouth expressions under VRM 1.x lowercase names first", () => {
+    const expressionManager = {
+      setValue: vi.fn(),
+      expressionMap: {
+        aa: { binds: [{}] },
+        A: { binds: [{}] }
+      }
+    };
+
+    expect(resolveVrmMouthExpressionName(expressionManager, "aa")).toBe("aa");
+  });
+
+  it("returns null when mouth expression has no bound candidates", () => {
+    const expressionManager = {
+      setValue: vi.fn(),
+      expressionMap: {
+        aa: { binds: [] }
+      }
+    };
+
+    expect(resolveVrmMouthExpressionName(expressionManager, "aa")).toBeNull();
+    expect(resolveVrmMouthExpressionName(expressionManager, "ee")).toBeNull();
+    expect(resolveVrmMouthExpressionName(undefined, "aa")).toBeNull();
   });
 
   it("detects whether a VRM expression has visible binds", () => {

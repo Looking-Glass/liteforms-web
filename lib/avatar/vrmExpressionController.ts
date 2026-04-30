@@ -11,6 +11,40 @@ export type VrmMouthFrame = Pick<VisemeFrame, "vrmExpression" | "weight"> | RmsL
 
 const vrmMouthExpressions: VrmMouthExpression[] = ["aa", "ih", "ou", "ee", "oh"];
 
+/**
+ * Candidate expression names for each VRM mouth shape, ordered by preference.
+ * VRM 1.x names are tried first; VRM 0.x uppercase preset names are tried as fallbacks
+ * for models where blendshape groups were not mapped to VRM 1.x standard names.
+ */
+const vrm0MouthExpressionCandidates: Record<VrmMouthExpression, string[]> = {
+  aa: ["aa", "A"],
+  ih: ["ih", "I"],
+  ou: ["ou", "U"],
+  ee: ["ee", "E"],
+  oh: ["oh", "O"],
+};
+
+/**
+ * Finds the actual expression name stored in the expression manager that corresponds
+ * to the given VRM mouth expression. Returns the first candidate with bound morph
+ * targets, or null if none is found.
+ *
+ * This handles both VRM 1.x models (expressions named "aa", "ih", etc.) and VRM 0.x
+ * models where the blendshape groups may not have been mapped to standard VRM 1.x names
+ * and remain stored as "A", "I", "U", "E", "O".
+ */
+export function resolveVrmMouthExpressionName(
+  expressionManager: VrmExpressionManagerLike | undefined,
+  expression: VrmMouthExpression
+): string | null {
+  for (const candidate of vrm0MouthExpressionCandidates[expression]) {
+    if (hasBoundVrmExpression(expressionManager, candidate)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 export function applyVrmMouthFrame(expressionManager: VrmExpressionManagerLike | undefined, frame: VrmMouthFrame) {
   if (!expressionManager) {
     return;

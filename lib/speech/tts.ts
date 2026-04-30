@@ -422,27 +422,50 @@ async function synthesizeGoogle(
   fetchImpl: FetchLike
 ): Promise<TtsResult> {
   const url = `${trimSlash(config.baseUrl)}/v1beta/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.credential)}`;
+  const requestBody = {
+    contents: [{ parts: [{ text }] }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voice } } }
+    }
+  };
+  // #region agent log
+  console.log('[dbg-f2778a] google-tts-request', {model:config.model, voice:config.voice, urlWithoutKey:url.replace(/key=[^&]+/,'key=REDACTED'), body:requestBody});
+  // #endregion
   const response = await fetchImpl(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text }] }],
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voice } } }
-      }
-    })
+    body: JSON.stringify(requestBody)
   });
+  // #region agent log
+  console.log('[dbg-f2778a] google-tts-response-status', {status:response.status, ok:response.ok, statusText:response.statusText});
+  // #endregion
   if (!response.ok) {
+    const errText = await response.text().catch(() => "(unreadable)");
+    // #region agent log
+    console.log('[dbg-f2778a] google-tts-http-error', {status:response.status, body:errText.slice(0,800)});
+    // #endregion
     throw new Error(`Google TTS failed with ${response.status}`);
   }
   const data = await response.json();
+  // #region agent log
+  console.log('[dbg-f2778a] google-tts-response-body', {hasError:!!data?.error, errorCode:data?.error?.code, errorMsg:data?.error?.message, candidatesLength:data?.candidates?.length, finishReason:data?.candidates?.[0]?.finishReason, contentPartsLength:data?.candidates?.[0]?.content?.parts?.length, part0Keys:data?.candidates?.[0]?.content?.parts?.[0] ? Object.keys(data.candidates[0].content.parts[0]) : null, mimeType:data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType, hasInlineData:!!data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data, rawData:JSON.stringify(data).slice(0,600)});
+  console.log('[dbg-f2778a] google-tts-raw-json', JSON.stringify(data).slice(0, 800));
+  // #endregion
   const part = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData as
     | { mimeType: string; data: string }
     | undefined;
   if (!part) throw new Error("Google TTS: no audio in response");
   const audio = Uint8Array.from(atob(part.data), (c) => c.charCodeAt(0)).buffer;
-  return { audio, mimeType: part.mimeType ?? "audio/wav" };
+  const rawMime = (part.mimeType ?? "").toLowerCase();
+  const isL16 = rawMime.startsWith("audio/l16") || rawMime.startsWith("audio/pcm");
+  const rateMatch = rawMime.match(/rate=(\d+)/);
+  const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+  return {
+    audio,
+    mimeType: isL16 ? "audio/pcm" : (part.mimeType ?? "audio/wav"),
+    sampleRate: isL16 ? sampleRate : undefined
+  };
 }
 
 // ── Inworld ───────────────────────────────────────────────────────────────────

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AmbientLight,
-  Box3,
   Clock,
   Color,
   DirectionalLight,
@@ -38,6 +37,9 @@ import {
   configureLightShadow,
   setMeshShadowFlags,
 } from "@/lib/avatar/shadowSetup";
+import { computeModelFraming } from "@/lib/avatar/modelFraming";
+import { repairMorphTargetDictionaries } from "@/lib/avatar/vrmMorphTargetRepair";
+import type { GltfMeshDef } from "@/lib/avatar/vrmMorphTargetRepair";
 
 type AvatarSceneProps = {
   modelUrl?: string;
@@ -338,18 +340,17 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       resize();
       window.addEventListener("resize", resize);
 
+      // Default lobster uses 1.8 units max-axis so it fills the frame nicely.
+      // Imported humanoid VRMs are typically taller than they are wide, so 1.8
+      // units makes them appear too large for the camera position; 1.2 gives a
+      // comfortable portrait-framing that roughly matches the lobster's visual size.
+      const frameTargetMaxAxis = modelUrl === DEFAULT_MODEL_URL ? 1.8 : 1.2;
+
       const frameModel = (object: Object3D) => {
-        const bounds = new Box3().setFromObject(object);
-        const size = bounds.getSize(new Vector3());
-        const center = bounds.getCenter(new Vector3());
-        const maxAxis = Math.max(size.x, size.y, size.z);
-        const scale = maxAxis > 0 ? 1.8 / maxAxis : 1;
-
-        object.scale.setScalar(scale);
-        object.position.sub(center.multiplyScalar(scale));
-        object.position.y += size.y * scale * 0.5 - 0.05;
-
-        controls!.target.set(0, Math.max(0.75, size.y * scale * 0.45), 0);
+        const framing = computeModelFraming(object, frameTargetMaxAxis);
+        object.scale.setScalar(framing.scale);
+        object.position.copy(framing.position);
+        controls!.target.copy(framing.cameraTarget);
         camera.position.copy(PREVIEW_CAMERA_INITIAL_POSITION);
         controls!.update();
         lockPolarAngle(camera, controls!);
@@ -375,6 +376,14 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           if (!loadedVrm) {
             setStatus("Avatar failed to load");
             return;
+          }
+
+          // THREE.js GLTFLoader reads morph target names from mesh.extras.targetNames,
+          // but many VRM 0.x files store them on each primitive's extras instead.
+          // Repair the morphTargetDictionary before the animator reads it.
+          const gltfJson = (gltf as { parser?: { json?: { meshes?: GltfMeshDef[] } } }).parser?.json;
+          if (gltfJson?.meshes) {
+            repairMorphTargetDictionaries(loadedVrm.scene, gltfJson.meshes);
           }
 
           currentVrm = loadedVrm;
@@ -444,8 +453,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       // screenW×screenH every frame) displays without distortion.
       let isLkgSessionActive = false;
       const lkgButtonTextMap: Record<string, string> = {
-        "ENTER VR": "Hologramiphy",
-        "ENTER LOOKING GLASS": "Hologramiphy",
+        "ENTER VR": "Hologram-iphy",
+        "ENTER LOOKING GLASS": "Hologram-iphy",
         "EXIT VR": "Make it boring",
         "EXIT LOOKING GLASS": "Make it boring",
       };

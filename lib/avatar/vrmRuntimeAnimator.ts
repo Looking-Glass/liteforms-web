@@ -9,7 +9,7 @@ import {
   resolveVrm0MouthMorphTarget,
   setMorphTargetWeight
 } from "./morphTargetController";
-import { hasBoundVrmExpression } from "./vrmExpressionController";
+import { hasBoundVrmExpression, resolveVrmMouthExpressionName } from "./vrmExpressionController";
 
 const vrmMouthExpressions: VrmMouthExpression[] = ["aa", "ih", "ou", "ee", "oh"];
 const blinkExpressionNames = ["blink", "blinkLeft", "blinkRight"];
@@ -41,6 +41,8 @@ export class VrmRuntimeAnimator {
   private readonly morphMouthTargets: string[];
   private readonly blinkExpressionNames: string[];
   private readonly blinkMorphTargetName: string | null;
+  /** Maps each VRM mouth expression (aa/ih/ou/ee/oh) to the actual name in the expression manager. */
+  private readonly resolvedMouthExpressionNames: Map<VrmMouthExpression, string>;
   private mouthTarget: MouthTarget | null = null;
   private blinkWeight = 0;
   private blinkTarget = 0;
@@ -59,6 +61,13 @@ export class VrmRuntimeAnimator {
     this.morphMouthTargets = getAvailableVrm0MouthMorphTargets(vrm.scene);
     this.blinkExpressionNames = blinkExpressionNames.filter((name) => hasBoundVrmExpression(vrm.expressionManager, name));
     this.blinkMorphTargetName = this.resolveBlinkMorphTarget();
+    this.resolvedMouthExpressionNames = new Map();
+    for (const expression of vrmMouthExpressions) {
+      const resolved = resolveVrmMouthExpressionName(vrm.expressionManager, expression);
+      if (resolved !== null) {
+        this.resolvedMouthExpressionNames.set(expression, resolved);
+      }
+    }
     this.nextBlinkAt = this.clock.now() + this.randomRange(1800, 5200);
     this.nextEyeMoveAt = this.clock.now();
 
@@ -73,7 +82,7 @@ export class VrmRuntimeAnimator {
     const holdUntil = this.clock.now() + getMouthHoldMs(frame);
     const expression = frame.vrmExpression;
 
-    if (hasBoundVrmExpression(this.vrm.expressionManager, expression)) {
+    if (expression !== null && this.resolvedMouthExpressionNames.has(expression)) {
       this.mouthTarget = {
         mode: "expression",
         expression,
@@ -122,8 +131,9 @@ export class VrmRuntimeAnimator {
       const next = MathUtils.lerp(current, desired, alpha);
       this.mouthWeights.set(expression, next);
 
-      if (hasBoundVrmExpression(this.vrm.expressionManager, expression)) {
-        this.vrm.expressionManager?.setValue(expression, next);
+      const resolvedName = this.resolvedMouthExpressionNames.get(expression);
+      if (resolvedName !== undefined) {
+        this.vrm.expressionManager?.setValue(resolvedName, next);
       }
     }
 

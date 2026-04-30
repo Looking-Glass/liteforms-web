@@ -4,6 +4,31 @@ import type { VRM } from "@pixiv/three-vrm";
 import { VrmRuntimeAnimator } from "./vrmRuntimeAnimator";
 
 describe("VRM runtime animator", () => {
+  it("resolves VRM 0.x mouth expressions stored under A/E/I/O/U names", () => {
+    let now = 0;
+    const values = new Map<string, number>();
+    const vrm = createVrm({
+      expressionMap: {
+        A: { binds: [{}] },
+        E: { binds: [{}] },
+        I: { binds: [{}] },
+        O: { binds: [{}] },
+        U: { binds: [{}] },
+        blink: { binds: [{}] }
+      },
+      onSetValue: (name, value) => values.set(name, value)
+    });
+    const animator = new VrmRuntimeAnimator(vrm, { now: () => now, random: () => 0.5 });
+
+    animator.setLipSyncFrame({ target: "viseme_E", group: "E", vrmExpression: "ee", start: 0, end: 0.2, weight: 1 });
+    animator.update(1 / 60);
+
+    const eWeight = values.get("E") ?? 0;
+    expect(eWeight).toBeGreaterThan(0);
+    expect(values.get("A") ?? 0).toBe(0);
+    expect(values.get("ee")).toBeUndefined();
+  });
+
   it("lerps VRM mouth expressions in and back out instead of snapping", () => {
     let now = 0;
     const values = new Map<string, number>();
