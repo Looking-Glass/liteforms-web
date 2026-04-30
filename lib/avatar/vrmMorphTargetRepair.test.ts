@@ -44,6 +44,53 @@ describe("repairMorphTargetDictionaries", () => {
     expect(scene.children[0].morphTargetDictionary).toEqual({ existing: 0 });
   });
 
+  // Three.js Mesh.updateMorphTargets() (called by GLTFLoader) seeds the dictionary
+  // with numeric placeholder keys ({"0":0,"1":1,...}) when morph attributes have no
+  // names. We must still repair these from prim.extras.targetNames, because they
+  // hide the missing-dictionary signal but contain no meaningful names.
+  it("repairs dictionaries that contain only numeric placeholder keys", () => {
+    const targetNames = ["blink_R", "blink_L", "A", "I", "U", "E", "O"];
+    const placeholderDict: Record<string, number> = {};
+    for (let i = 0; i < targetNames.length; i++) {
+      placeholderDict[String(i)] = i;
+    }
+    const scene = createScene([createMesh("Face", targetNames.length, placeholderDict)]);
+    const meshDefs = [
+      {
+        name: "Face",
+        primitives: [{ extras: { targetNames } }]
+      }
+    ];
+
+    const count = repairMorphTargetDictionaries(scene, meshDefs);
+
+    expect(count).toBe(1);
+    expect(scene.children[0].morphTargetDictionary).toEqual({
+      blink_R: 0,
+      blink_L: 1,
+      A: 2,
+      I: 3,
+      U: 4,
+      E: 5,
+      O: 6
+    });
+  });
+
+  it("preserves a real (non-placeholder) dictionary that mixes named and numeric keys", () => {
+    const scene = createScene([createMesh("Face", 3, { A: 0, "1": 1, B: 2 })]);
+    const meshDefs = [
+      {
+        name: "Face",
+        primitives: [{ extras: { targetNames: ["X", "Y", "Z"] } }]
+      }
+    ];
+
+    const count = repairMorphTargetDictionaries(scene, meshDefs);
+
+    expect(count).toBe(0);
+    expect(scene.children[0].morphTargetDictionary).toEqual({ A: 0, "1": 1, B: 2 });
+  });
+
   it("skips objects with no morphTargetInfluences", () => {
     const scene = createScene([{ morphTargetDictionary: undefined, morphTargetInfluences: undefined }]);
     const meshDefs = [{ name: "x", primitives: [{ extras: { targetNames: ["A"] } }] }];
