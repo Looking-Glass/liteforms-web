@@ -1,5 +1,6 @@
 export type LlmProviderId =
   | "browser-local-gemma"
+  | "browser-local-qwen"
   | "openai"
   | "chatgpt-subscription"
   | "anthropic"

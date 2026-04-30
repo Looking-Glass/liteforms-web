@@ -41,9 +41,11 @@ function renderModal(overrides: {
 }
 
 // ── Navigation helpers ────────────────────────────────────────────────────────
+// SKIP_WELCOME_SCREEN=true: the modal opens directly on the LLM step.
+// goToLlmStep is intentionally a no-op — it exists so callers don't change.
 
 function goToLlmStep() {
-  fireEvent.click(screen.getByRole("button", { name: /custom configuration/i }));
+  // Modal starts on the LLM step; no navigation needed.
 }
 function goToTtsStep() {
   goToLlmStep();
@@ -53,13 +55,18 @@ function goToSttStep() {
   goToTtsStep();
   fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
 }
+// Navigate to the loading step via the custom-config flow (LLM → TTS → STT → Start).
 function goToLoadingStep() {
-  fireEvent.click(screen.getByRole("button", { name: /built-in models/i }));
+  goToSttStep();
+  fireEvent.click(screen.getByRole("button", { name: /start liteforms/i }));
 }
 
 // ── Welcome screen ────────────────────────────────────────────────────────────
+// SKIP_WELCOME_SCREEN=true: the welcome step is preserved in the source but never
+// shown. These tests document its expected behaviour and can be re-enabled by
+// setting SKIP_WELCOME_SCREEN=false in OnboardingModal.tsx.
 
-describe("OnboardingModal welcome screen", () => {
+describe.skip("OnboardingModal welcome screen", () => {
   it("renders the intro text mentioning built-in free models", () => {
     renderModal();
     expect(screen.getByText(/built-in free models/i)).toBeInTheDocument();
@@ -211,6 +218,25 @@ describe("OnboardingModal loading step", () => {
   });
 });
 
+// ── Initial render (welcome skipped) ─────────────────────────────────────────
+
+describe("OnboardingModal initial render (SKIP_WELCOME_SCREEN=true)", () => {
+  it("opens directly on the LLM step — shows the LLM heading", () => {
+    renderModal();
+    expect(screen.getByRole("heading", { name: /select llm/i })).toBeInTheDocument();
+  });
+
+  it("does not show the welcome screen intro text on initial render", () => {
+    renderModal();
+    expect(screen.queryByText(/built-in free models/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show a 'built-in models' button on initial render", () => {
+    renderModal();
+    expect(screen.queryByRole("button", { name: /built-in models/i })).not.toBeInTheDocument();
+  });
+});
+
 // ── LLM step ──────────────────────────────────────────────────────────────────
 
 describe("OnboardingModal LLM step", () => {
@@ -232,16 +258,19 @@ describe("OnboardingModal LLM step", () => {
     expect(screen.getByRole("combobox", { name: /model provider/i })).toBeInTheDocument();
   });
 
-  it("defaults to Gemma in browser (browser-local-gemma)", () => {
+  it("defaults to Anthropic API (anthropic)", () => {
     renderModal();
     goToLlmStep();
-    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("browser-local-gemma");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("anthropic");
   });
 
   it("hides model dropdown for browser-local-gemma (only one model)", () => {
     renderModal();
     goToLlmStep();
-    // Default is browser-local-gemma — no separate model picker should appear
+    // Explicitly select browser-local-gemma
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "browser-local-gemma" }
+    });
     expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
   });
@@ -255,11 +284,12 @@ describe("OnboardingModal LLM step", () => {
     expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
   });
 
-  it("has a Back button that returns to the welcome screen", () => {
-    renderModal();
+  it("has a Cancel button that closes the modal (welcome screen is skipped)", () => {
+    const onClose = vi.fn();
+    renderModal({ onClose });
     goToLlmStep();
-    fireEvent.click(screen.getByRole("button", { name: /^back$/i }));
-    expect(screen.getByText(/built-in free models/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^cancel$/i }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("has a Next button that advances to the TTS step", () => {
@@ -281,6 +311,10 @@ describe("OnboardingModal LLM step", () => {
   it("hides endpoint field for browser-local-gemma", () => {
     renderModal();
     goToLlmStep();
+    // Explicitly select browser-local-gemma (default is now anthropic which shows endpoint)
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "browser-local-gemma" }
+    });
     expect(screen.queryByRole("textbox", { name: /endpoint/i })).not.toBeInTheDocument();
   });
 });
@@ -369,7 +403,7 @@ describe("OnboardingModal STT step", () => {
     fireEvent.click(screen.getByRole("button", { name: /start liteforms/i }));
     expect(onUseCustom).toHaveBeenCalledOnce();
     expect(onUseCustom).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "browser-local-gemma" }),
+      expect.objectContaining({ provider: "anthropic" }),
       expect.objectContaining({ provider: "kokoro" }),
       expect.objectContaining({ provider: "distil-whisper" })
     );
@@ -690,7 +724,7 @@ describe("OnboardingModal ElevenLabs credential sharing", () => {
 
 describe("OnboardingModal new cloud provider options", () => {
   function goToLlmAndSelectProvider(providerId: string) {
-    fireEvent.click(screen.getByRole("button", { name: /custom configuration/i }));
+    // Modal starts on LLM step (SKIP_WELCOME_SCREEN=true); just select the provider.
     fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
       target: { value: providerId }
     });
@@ -1133,5 +1167,78 @@ describe("OnboardingModal STT step - extended providers", () => {
     goToSttStep();
     selectSttProvider("distil-whisper");
     expect(screen.queryByLabelText("Transcription credential")).not.toBeInTheDocument();
+  });
+});
+
+// ── Qwen 3.5 local model ───────────────────────────────────────────────────────
+
+describe("OnboardingModal Qwen 3.5 local provider", () => {
+  function goToLlmAndSelectProvider(providerId: string) {
+    // Modal starts on LLM step (SKIP_WELCOME_SCREEN=true); just select the provider.
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: providerId }
+    });
+  }
+
+  it("Qwen 3.5 0.8B (local) appears as a provider option", () => {
+    renderModal();
+    goToLlmAndSelectProvider("browser-local-qwen");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("browser-local-qwen");
+  });
+
+  it("hides model dropdown for browser-local-qwen (only one model)", () => {
+    renderModal();
+    goToLlmAndSelectProvider("browser-local-qwen");
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("hides endpoint field for browser-local-qwen", () => {
+    renderModal();
+    goToLlmAndSelectProvider("browser-local-qwen");
+    expect(screen.queryByRole("textbox", { name: /endpoint/i })).not.toBeInTheDocument();
+  });
+
+  it("Gemma 4 E2B (local) appears as a provider option at the bottom of the list", () => {
+    renderModal();
+    // Already on LLM step (SKIP_WELCOME_SCREEN=true)
+    const select = screen.getByRole("combobox", { name: /model provider/i }) as HTMLSelectElement;
+    const options = Array.from(select.options);
+    expect(options[options.length - 1].value).toBe("browser-local-gemma");
+  });
+
+  it("Anthropic is the first option in the provider list", () => {
+    renderModal();
+    // Already on LLM step (SKIP_WELCOME_SCREEN=true)
+    const select = screen.getByRole("combobox", { name: /model provider/i }) as HTMLSelectElement;
+    expect(select.options[0].value).toBe("anthropic");
+  });
+});
+
+// ── Loading screen filtering ───────────────────────────────────────────────────
+
+describe("OnboardingModal loading screen — only shows selected models", () => {
+  it("hides models marked as 'Not used' from the loading queue", () => {
+    const filteredState: LocalModelLoadState[] = [
+      { id: "gemma", label: "Gemma 4 E2B q8", status: "ready", progress: 100, message: "Not used" },
+      { id: "kokoro", label: "Kokoro", status: "loading", progress: 50, message: "Downloading" },
+      { id: "distil-whisper", label: "Distil-Whisper", status: "idle", progress: 0, message: "Waiting" }
+    ];
+    renderModal({ localModelLoadState: filteredState });
+    goToLoadingStep();
+    expect(screen.queryByText("Gemma 4 E2B q8")).not.toBeInTheDocument();
+    expect(screen.getByText("Kokoro")).toBeInTheDocument();
+    expect(screen.getByText("Distil-Whisper")).toBeInTheDocument();
+  });
+
+  it("shows 'All models ready' when all non-'Not used' models are ready", () => {
+    const filteredState: LocalModelLoadState[] = [
+      { id: "gemma", label: "Gemma 4 E2B q8", status: "ready", progress: 100, message: "Not used" },
+      { id: "kokoro", label: "Kokoro", status: "ready", progress: 100, message: "Ready" },
+      { id: "distil-whisper", label: "Distil-Whisper", status: "ready", progress: 100, message: "Ready" }
+    ];
+    renderModal({ localModelLoadState: filteredState });
+    goToLoadingStep();
+    expect(screen.getByText(/all models ready/i)).toBeInTheDocument();
   });
 });

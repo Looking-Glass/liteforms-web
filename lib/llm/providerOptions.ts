@@ -13,10 +13,19 @@ export type LlmProviderOption = {
 
 export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
-    id: "browser-local-gemma",
-    label: "Gemma 4 E2B (local)",
-    defaultModel: "onnx-community/gemma-4-E2B-it-ONNX",
-    models: [{ id: "onnx-community/gemma-4-E2B-it-ONNX", label: "Gemma 4 E2B (browser)" }]
+    id: "anthropic",
+    label: "Anthropic API",
+    defaultModel: "claude-opus-4-7",
+    defaultBaseUrl: "https://api.anthropic.com",
+    models: [
+      { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
+      { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
+      { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
+      { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+      { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+      { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
+      { id: "claude-haiku-3-5", label: "Claude Haiku 3.5" }
+    ]
   },
   {
     id: "openai",
@@ -42,21 +51,6 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
       { id: "gpt-5.5-pro", label: "GPT-5.5 Pro" },
       { id: "gpt-5.4", label: "GPT-5.4" },
       { id: "gpt-5.4-pro", label: "GPT-5.4 Pro" }
-    ]
-  },
-  {
-    id: "anthropic",
-    label: "Anthropic API",
-    defaultModel: "claude-opus-4-7",
-    defaultBaseUrl: "https://api.anthropic.com",
-    models: [
-      { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
-      { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
-      { id: "claude-opus-4-5", label: "Claude Opus 4.5" },
-      { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-      { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
-      { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" },
-      { id: "claude-haiku-3-5", label: "Claude Haiku 3.5" }
     ]
   },
   {
@@ -200,6 +194,18 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
     defaultModel: "default",
     defaultBaseUrl: "ws://127.0.0.1:18789"
     // No static model list — OpenClaw routes to whichever provider is configured
+  },
+  {
+    id: "browser-local-qwen",
+    label: "Qwen 3.5 0.8B (local)",
+    defaultModel: "onnx-community/Qwen3.5-0.8B-ONNX",
+    models: [{ id: "onnx-community/Qwen3.5-0.8B-ONNX", label: "Qwen 3.5 0.8B (browser)" }]
+  },
+  {
+    id: "browser-local-gemma",
+    label: "Gemma 4 E2B (local)",
+    defaultModel: "onnx-community/gemma-4-E2B-it-ONNX",
+    models: [{ id: "onnx-community/gemma-4-E2B-it-ONNX", label: "Gemma 4 E2B (browser)" }]
   }
 ];
 

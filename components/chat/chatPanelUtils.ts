@@ -21,7 +21,10 @@ export function formatCacheUsage(usage: CacheUsage): string {
 }
 
 export function updateEndpointMode(providerId: LlmProviderId): "native" | "openai-compatible" {
-  return providerId === "ollama" || providerId === "browser-local-gemma" || providerId === "openclaw"
+  return providerId === "ollama" ||
+    providerId === "browser-local-gemma" ||
+    providerId === "browser-local-qwen" ||
+    providerId === "openclaw"
     ? "native"
     : "openai-compatible";
 }

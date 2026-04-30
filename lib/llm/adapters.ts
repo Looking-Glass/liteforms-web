@@ -43,7 +43,10 @@ export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
       if (normalizedRequest.config.provider === "ollama" && normalizedRequest.config.endpointMode !== "openai-compatible") {
         return streamOllama(normalizedRequest, fetchImpl);
       }
-      if (normalizedRequest.config.provider === "browser-local-gemma") {
+      if (
+        normalizedRequest.config.provider === "browser-local-gemma" ||
+        normalizedRequest.config.provider === "browser-local-qwen"
+      ) {
         return streamBrowserLocalGemma(normalizedRequest, input.localGemmaWorker);
       }
       return streamOpenAiCompatible(normalizedRequest, fetchImpl);

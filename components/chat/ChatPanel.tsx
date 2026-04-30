@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createLlmAdapter, getDefaultProviderConfig, getProviderLabel, normalizeProviderConfig } from "@/lib/llm";
 import { sanitizeAssistantText } from "@/lib/llm/output";
 import { LocalGemmaWorkerClient } from "@/lib/llm/localGemmaWorker";
-import type { BaseProviderConfig, ChatMessage } from "@/lib/llm";
+import type { BaseProviderConfig, ChatMessage, LlmProviderId } from "@/lib/llm";
 import { LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
 import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import {
@@ -19,7 +19,7 @@ import {
   rewriteDecimalsForTts,
   getSafeTextForTts
 } from "@/lib/speech";
-import type { TtsResult } from "@/lib/speech";
+import type { TtsResult, TtsProviderId, AsrProviderId } from "@/lib/speech";
 import { DistilWhisperWorkerClient, KokoroWorkerClient } from "@/lib/speech/workerClient";
 import type { AsrConfig, TtsConfig } from "@/lib/speech";
 import { dispatchAvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
@@ -29,7 +29,8 @@ import {
   formatBytes,
   formatCacheUsage,
   isModelCacheName,
-  normalizeHuggingfaceProgress
+  normalizeHuggingfaceProgress,
+  updateEndpointMode
 } from "./chatPanelUtils";
 import type { CacheUsage } from "./chatPanelUtils";
 
@@ -64,7 +65,7 @@ type ChatPanelProps = {
 
 type ChatStatus = "idle" | "streaming" | "error";
 type SpeechStatus = "idle" | "speaking" | "listening" | "transcribing" | "testing" | "error";
-export type LocalModelId = "gemma" | "kokoro" | "distil-whisper";
+export type LocalModelId = "gemma" | "qwen-local" | "kokoro" | "distil-whisper";
 export type LocalModelLoadState = {
   id: LocalModelId;
   label: string;
@@ -73,18 +74,32 @@ export type LocalModelLoadState = {
   message: string;
 };
 
+const GEMMA_MODEL_ID = "onnx-community/gemma-4-E2B-it-ONNX";
+const QWEN_MODEL_ID = "onnx-community/Qwen3.5-0.8B-ONNX";
+
 const localModelStorageKey = "liteforms.localModels";
 export const initialLocalModelLoadState: LocalModelLoadState[] = [
   { id: "gemma", label: "Gemma 4 E2B q8", status: "idle", progress: 0, message: "Waiting" },
+  { id: "qwen-local", label: "Qwen 3.5 0.8B", status: "idle", progress: 0, message: "Waiting" },
   { id: "kokoro", label: "Kokoro", status: "idle", progress: 0, message: "Waiting" },
   { id: "distil-whisper", label: "Distil-Whisper", status: "idle", progress: 0, message: "Waiting" }
 ];
+
+/** Returns true for provider IDs that run entirely in the browser with no endpoint/credential. */
+function isBrowserLocalProvider(provider: LlmProviderId): boolean {
+  return provider === "browser-local-gemma" || provider === "browser-local-qwen";
+}
 
 // Module-level guard for preload start. Survives across all ChatPanel instances
 // (including remounts triggered by chatPanelKey changes in the parent and
 // StrictMode dev double-invokes). Keyed by `preloadSessionId` so each distinct
 // session can preload exactly once.
 const preloadStartedSessions = new Set<number>();
+
+/** Exposed for tests only — clears the preload session guard between test cases. */
+export function _clearPreloadSessionsForTesting() {
+  preloadStartedSessions.clear();
+}
 
 
 export function ChatPanel({
@@ -103,7 +118,9 @@ export function ChatPanel({
   onConfigChange,
   onOpenConfigure
 }: ChatPanelProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    character.greeting ? [{ role: "assistant" as const, content: character.greeting }] : []
+  );
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [speechStatus, setSpeechStatus] = useState<SpeechStatus>("idle");
   const [error, setError] = useState("");
@@ -138,15 +155,38 @@ export function ChatPanel({
   const distilWhisperWorkerRef = useRef(new DistilWhisperWorkerClient());
   const vrmInputRef = useRef<HTMLInputElement>(null);
   const preloadCancelledRef = useRef(false);
+  // Throttle rapid progress updates from worker message events to avoid
+  // overwhelming React's render loop ("Maximum update depth exceeded") on
+  // slow connections where Transformers.js fires many small-chunk events.
+  const pendingProgressRef = useRef<Map<LocalModelId, Partial<LocalModelLoadState>>>(new Map());
+  const progressFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const providerMeta = useMemo(
     () => LLM_PROVIDER_OPTIONS.find((provider) => provider.id === config.provider) ?? LLM_PROVIDER_OPTIONS[0],
     [config.provider]
   );
-  const localModelProgress = useMemo(
-    () => Math.round(localModelLoadState.reduce((sum, model) => sum + model.progress, 0) / localModelLoadState.length),
-    [localModelLoadState]
+
+  /** IDs of local models that are currently wanted based on configured providers. */
+  const activeLocalModelIds = useMemo<Set<LocalModelId>>(() => {
+    const ids = new Set<LocalModelId>();
+    if (config.provider === "browser-local-gemma") ids.add("gemma");
+    if (config.provider === "browser-local-qwen") ids.add("qwen-local");
+    if (normalizeTtsConfig(ttsConfig).provider === "kokoro") ids.add("kokoro");
+    if (normalizeAsrConfig(asrConfig).provider === "distil-whisper") ids.add("distil-whisper");
+    return ids;
+  }, [config.provider, ttsConfig, asrConfig]);
+
+  /** Only models that are actively selected — shown in the UI and propagated to the parent. */
+  const activeLocalModels = useMemo(
+    () => localModelLoadState.filter((m) => activeLocalModelIds.has(m.id)),
+    [localModelLoadState, activeLocalModelIds]
   );
+
+  const localModelProgress = useMemo(() => {
+    if (activeLocalModels.length === 0) return 0;
+    return Math.round(activeLocalModels.reduce((sum, m) => sum + m.progress, 0) / activeLocalModels.length);
+  }, [activeLocalModels]);
+
   const isOpenClaw = config.provider === "openclaw";
 
   useEffect(() => {
@@ -160,8 +200,8 @@ export function ChatPanel({
   }, []);
 
   useEffect(() => {
-    onLocalModelLoadStateChange?.(localModelLoadState);
-  }, [localModelLoadState, onLocalModelLoadStateChange]);
+    onLocalModelLoadStateChange?.(activeLocalModels);
+  }, [activeLocalModels, onLocalModelLoadStateChange]);
 
   useEffect(() => {
     if (messageListRef.current) {
@@ -200,15 +240,48 @@ export function ChatPanel({
     if (preloadStartedSessions.has(preloadSessionId)) return;
     preloadStartedSessions.add(preloadSessionId);
 
-    const updateLocalModel = (id: LocalModelId, patch: Partial<LocalModelLoadState>) => {
-      if (preloadCancelledRef.current) return;
+    const flushProgress = () => {
+      progressFlushTimerRef.current = null;
+      if (preloadCancelledRef.current) {
+        pendingProgressRef.current.clear();
+        return;
+      }
+      const patches = new Map(pendingProgressRef.current);
+      pendingProgressRef.current.clear();
+      if (patches.size === 0) return;
       setLocalModelLoadState((models) =>
         models.map((model) => {
-          if (model.id !== id) return model;
+          const patch = patches.get(model.id as LocalModelId);
+          if (!patch) return model;
           const progress = clampModelProgress(model.progress, model.status, patch.progress, patch.status);
           return { ...model, ...patch, progress };
         })
       );
+    };
+
+    const updateLocalModel = (id: LocalModelId, patch: Partial<LocalModelLoadState>) => {
+      if (preloadCancelledRef.current) return;
+      // Terminal states (ready / error / informational) apply immediately so
+      // the final status is never held back by the throttle window.
+      const isTerminal = patch.status === "ready" || patch.status === "error";
+      if (isTerminal) {
+        pendingProgressRef.current.delete(id);
+        setLocalModelLoadState((models) =>
+          models.map((model) => {
+            if (model.id !== id) return model;
+            const progress = clampModelProgress(model.progress, model.status, patch.progress, patch.status);
+            return { ...model, ...patch, progress };
+          })
+        );
+        return;
+      }
+      // Progress-only updates are coalesced: the latest patch wins per model,
+      // and a single setState is scheduled at most once per 100 ms.
+      const pending = pendingProgressRef.current;
+      pending.set(id, { ...(pending.get(id) ?? {}), ...patch });
+      if (progressFlushTimerRef.current === null) {
+        progressFlushTimerRef.current = setTimeout(flushProgress, 100);
+      }
     };
 
     async function preloadLocalModel(id: LocalModelId, preload: () => Promise<void> | undefined) {
@@ -229,6 +302,7 @@ export function ChatPanel({
     const normalizedAsrConfig = normalizeAsrConfig(asrConfig);
     const llmProvider = config.provider;
     const wantGemma = llmProvider === "browser-local-gemma";
+    const wantQwen = llmProvider === "browser-local-qwen";
     const wantKokoro = normalizedTtsConfig.provider === "kokoro";
     const wantDistilWhisper = normalizedAsrConfig.provider === "distil-whisper";
 
@@ -254,7 +328,7 @@ export function ChatPanel({
           updateLocalModel("gemma", { status: "ready", progress: 100, message: "Cached" });
         } else {
           await preloadLocalModel("gemma", () =>
-            localGemmaWorkerRef.current.preload?.({ model: LLM_PROVIDER_OPTIONS[0].defaultModel }, (progress) => {
+            localGemmaWorkerRef.current.preload?.({ model: GEMMA_MODEL_ID }, (progress) => {
               const normalized = normalizeHuggingfaceProgress(progress.progress);
               const capped = capPreloadUiProgress(normalized);
               updateLocalModel("gemma", {
@@ -267,6 +341,26 @@ export function ChatPanel({
         }
       } else {
         updateLocalModel("gemma", { status: "ready", progress: 100, message: "Not used" });
+      }
+
+      if (wantQwen) {
+        if (alreadyCached("qwen-local")) {
+          updateLocalModel("qwen-local", { status: "ready", progress: 100, message: "Cached" });
+        } else {
+          await preloadLocalModel("qwen-local", () =>
+            localGemmaWorkerRef.current.preload?.({ model: QWEN_MODEL_ID }, (progress) => {
+              const normalized = normalizeHuggingfaceProgress(progress.progress);
+              const capped = capPreloadUiProgress(normalized);
+              updateLocalModel("qwen-local", {
+                status: "loading",
+                ...(capped !== undefined ? { progress: capped } : {}),
+                message: progress.message ?? "Loading Qwen"
+              });
+            })
+          );
+        }
+      } else {
+        updateLocalModel("qwen-local", { status: "ready", progress: 100, message: "Not used" });
       }
 
       if (wantKokoro) {
@@ -312,6 +406,7 @@ export function ChatPanel({
         // so future page loads can skip workers for any model that's now in cache.
         const wantedIds: LocalModelId[] = [
           ...(wantGemma ? (["gemma"] as const) : []),
+          ...(wantQwen ? (["qwen-local"] as const) : []),
           ...(wantKokoro ? (["kokoro"] as const) : []),
           ...(wantDistilWhisper ? (["distil-whisper"] as const) : [])
         ];
@@ -324,6 +419,11 @@ export function ChatPanel({
     void runPreload();
     return () => {
       preloadCancelledRef.current = true;
+      if (progressFlushTimerRef.current !== null) {
+        clearTimeout(progressFlushTimerRef.current);
+        progressFlushTimerRef.current = null;
+      }
+      pendingProgressRef.current.clear();
       // The module-level `preloadStartedSessions` is intentionally NOT cleared here.
       // On StrictMode re-invoke (same instance), the next setup will see the session
       // is already started, skip the double-start, and un-cancel preloadCancelledRef
@@ -581,6 +681,49 @@ export function ChatPanel({
   const ttsMeta = TTS_PROVIDER_OPTIONS.find((p) => p.id === ttsConfig.provider) ?? TTS_PROVIDER_OPTIONS[0];
   const sttMeta = STT_PROVIDER_OPTIONS.find((p) => p.id === asrConfig.provider) ?? STT_PROVIDER_OPTIONS[0];
 
+  function updateLlmProvider(providerId: LlmProviderId) {
+    const option = LLM_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? LLM_PROVIDER_OPTIONS[0];
+    setConfig({
+      provider: option.id,
+      model: option.defaultModel,
+      baseUrl: option.defaultBaseUrl,
+      endpointMode: updateEndpointMode(option.id)
+    });
+  }
+
+  function updateTtsProvider(providerId: TtsProviderId) {
+    const opt = TTS_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? TTS_PROVIDER_OPTIONS[0];
+    if (providerId === "kokoro") {
+      setTtsConfig({ provider: "kokoro" });
+    } else if (providerId === "elevenlabs") {
+      setTtsConfig({ provider: "elevenlabs", voiceId: opt.defaultVoice ?? "Rachel", modelId: opt.defaultModel });
+    } else {
+      setTtsConfig({
+        provider: providerId as Exclude<TtsProviderId, "kokoro" | "elevenlabs">,
+        voice: opt.defaultVoice,
+        model: opt.defaultModel,
+        baseUrl: opt.defaultBaseUrl
+      } as TtsConfig);
+    }
+  }
+
+  function updateAsrProvider(providerId: AsrProviderId) {
+    const opt = STT_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? STT_PROVIDER_OPTIONS[0];
+    if (providerId === "distil-whisper") {
+      setAsrConfig({ provider: "distil-whisper" });
+    } else if (providerId === "elevenlabs") {
+      const sharedCredential =
+        ttsConfig.provider === "elevenlabs" && "credential" in ttsConfig ? ttsConfig.credential : undefined;
+      setAsrConfig({ provider: "elevenlabs", credential: sharedCredential, model: opt.defaultModel });
+    } else {
+      setAsrConfig({
+        provider: providerId as Exclude<AsrProviderId, "distil-whisper" | "elevenlabs">,
+        model: opt.defaultModel,
+        baseUrl: opt.defaultBaseUrl
+      } as AsrConfig);
+    }
+  }
+
   function handleVrmLoad(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -676,28 +819,78 @@ export function ChatPanel({
         <summary>Settings</summary>
         <div className="panel-section-body">
 
-          {/* Read-only provider summary */}
           <div className="model-settings">
             <label>
               Model provider
-              <span style={{ color: "var(--text)", fontWeight: "normal" }}>{providerMeta.label}</span>
+              <select
+                value={config.provider}
+                onChange={(e) => updateLlmProvider(e.target.value as LlmProviderId)}
+              >
+                {LLM_PROVIDER_OPTIONS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
             </label>
-            {config.provider !== "browser-local-gemma" && (
+            {!isBrowserLocalProvider(config.provider) && (
               <label>
                 Model
-                <span style={{ color: "var(--text)", fontWeight: "normal" }}>{config.model}</span>
+                {providerMeta.models ? (
+                  <select value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })}>
+                    {providerMeta.models.map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })} />
+                )}
               </label>
             )}
           </div>
           <div className="speech-settings">
             <label>
               Voice provider
-              <span style={{ color: "var(--text)", fontWeight: "normal" }}>{ttsMeta.label}</span>
+              <select
+                value={ttsConfig.provider}
+                onChange={(e) => updateTtsProvider(e.target.value as TtsProviderId)}
+              >
+                {TTS_PROVIDER_OPTIONS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
             </label>
+            {ttsMeta.needsCredential && (
+              <label>
+                Voice credential
+                <input
+                  type="password"
+                  value={"credential" in ttsConfig ? (ttsConfig.credential ?? "") : ""}
+                  onChange={(e) => setTtsConfig({ ...ttsConfig, credential: e.target.value } as TtsConfig)}
+                  placeholder="API key"
+                />
+              </label>
+            )}
             <label>
               Speech input provider
-              <span style={{ color: "var(--text)", fontWeight: "normal" }}>{sttMeta.label}</span>
+              <select
+                value={asrConfig.provider}
+                onChange={(e) => updateAsrProvider(e.target.value as AsrProviderId)}
+              >
+                {STT_PROVIDER_OPTIONS.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}</option>
+                ))}
+              </select>
             </label>
+            {sttMeta.needsCredential && (
+              <label>
+                Transcription credential
+                <input
+                  type="password"
+                  value={"credential" in asrConfig ? (asrConfig.credential ?? "") : ""}
+                  onChange={(e) => setAsrConfig({ ...asrConfig, credential: e.target.value } as AsrConfig)}
+                  placeholder="API key"
+                />
+              </label>
+            )}
           </div>
 
           <button
@@ -720,7 +913,7 @@ export function ChatPanel({
                 </div>
                 <progress value={localModelProgress} max={100} />
                 <div className="local-model-list">
-                  {localModelLoadState.map((model) => (
+                  {activeLocalModels.map((model) => (
                     <div className="local-model-row" key={model.id}>
                       <span>{model.label}</span>
                       <span className={`local-model-status ${model.status}`}>{model.message}</span>
@@ -834,7 +1027,8 @@ function persistLocalModelMetadata(downloadedIds: LocalModelId[]) {
         storedAt: new Date().toISOString(),
         downloadedIds,
         models: [
-          { id: "gemma", model: LLM_PROVIDER_OPTIONS[0].defaultModel, dtype: "q4f16", device: "webgpu" },
+          { id: "gemma", model: GEMMA_MODEL_ID, dtype: "q4f16", device: "webgpu" },
+          { id: "qwen-local", model: QWEN_MODEL_ID, dtype: "q8", device: "webgpu" },
           { id: "kokoro", model: "onnx-community/Kokoro-82M-v1.0-ONNX", dtype: "fp32", device: "webgpu" },
           { id: "distil-whisper", model: "onnx-community/distil-small.en", dtype: "q4", device: "webgpu" }
         ]

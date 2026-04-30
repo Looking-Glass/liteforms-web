@@ -3,6 +3,7 @@ import type { BaseProviderConfig } from "./types";
 
 const defaultBaseUrls = {
   "browser-local-gemma": undefined,
+  "browser-local-qwen": undefined,
   openai: "https://api.openai.com/v1",
   "chatgpt-subscription": "http://127.0.0.1:1455",
   anthropic: "https://api.anthropic.com",
@@ -24,6 +25,7 @@ const defaultBaseUrls = {
 
 const defaultEndpointModes = {
   "browser-local-gemma": "native",
+  "browser-local-qwen": "native",
   openai: "openai-compatible",
   "chatgpt-subscription": "openai-compatible",
   anthropic: "native",
@@ -49,6 +51,7 @@ export const providerConfigSchema = z
   .object({
     provider: z.enum([
       "browser-local-gemma",
+      "browser-local-qwen",
       "openai",
       "chatgpt-subscription",
       "anthropic",
@@ -102,7 +105,8 @@ export function normalizeProviderConfig(config: BaseProviderConfig): BaseProvide
 
 export function getProviderLabel(provider: BaseProviderConfig["provider"]) {
   return {
-    "browser-local-gemma": "Browser local",
+    "browser-local-gemma": "Browser local (Gemma)",
+    "browser-local-qwen": "Browser local (Qwen)",
     openai: "OpenAI API",
     "chatgpt-subscription": "ChatGPT connector",
     anthropic: "Anthropic API",

@@ -11,6 +11,10 @@ import type { LocalModelLoadState } from "@/components/chat/ChatPanel";
 
 type OnboardingStep = "welcome" | "llm" | "tts" | "stt" | "loading";
 
+// Set to false to restore the welcome screen that lets users choose between
+// built-in models and custom configuration.
+const SKIP_WELCOME_SCREEN = true;
+
 export type OnboardingModalProps = {
   onUseBuiltIn: () => void;
   onUseCustom: (config: BaseProviderConfig, ttsConfig: TtsConfig, asrConfig: AsrConfig) => void;
@@ -49,8 +53,17 @@ export function OnboardingModal({
   initialTtsConfig,
   initialAsrConfig
 }: OnboardingModalProps) {
-  const [step, setStep] = useState<OnboardingStep>(mode === "configure" ? "llm" : "welcome");
-  const [config, setConfig] = useState<BaseProviderConfig>(initialLlmConfig ?? getDefaultProviderConfig());
+  const [step, setStep] = useState<OnboardingStep>(
+    mode === "configure" || SKIP_WELCOME_SCREEN ? "llm" : "welcome"
+  );
+  const [config, setConfig] = useState<BaseProviderConfig>(
+    initialLlmConfig ?? {
+      provider: "anthropic",
+      model: "claude-opus-4-7",
+      baseUrl: "https://api.anthropic.com",
+      endpointMode: "native"
+    }
+  );
   const [ttsConfig, setTtsConfig] = useState<TtsConfig>(initialTtsConfig ?? { provider: "kokoro" });
   const [asrConfig, setAsrConfig] = useState<AsrConfig>(initialAsrConfig ?? { provider: "distil-whisper" });
 
@@ -105,6 +118,7 @@ export function OnboardingModal({
   function handleCustomStart() {
     const needsLocalModels =
       config.provider === "browser-local-gemma" ||
+      config.provider === "browser-local-qwen" ||
       ttsConfig.provider === "kokoro" ||
       asrConfig.provider === "distil-whisper";
 
@@ -125,7 +139,7 @@ export function OnboardingModal({
     localModelLoadState.every((m) => m.status === "ready" || m.status === "error");
 
   const providerMeta = llmProviderOptions.find((p) => p.id === config.provider) ?? llmProviderOptions[0];
-  const showEndpoint = config.provider !== "browser-local-gemma";
+  const showEndpoint = config.provider !== "browser-local-gemma" && config.provider !== "browser-local-qwen";
   const showCredential = credentialProviders.includes(config.provider);
 
   const ttsMeta = TTS_PROVIDER_OPTIONS.find((p) => p.id === ttsConfig.provider) ?? TTS_PROVIDER_OPTIONS[0];
@@ -197,7 +211,8 @@ export function OnboardingModal({
   // ── Loading ────────────────────────────────────────────────────────────────
 
   if (step === "loading") {
-    const models = localModelLoadState ?? [];
+    // Only show models that are actually being downloaded/used (not "Not used" ones).
+    const models = (localModelLoadState ?? []).filter((m) => m.message !== "Not used");
     // Show overall preload progress across the local model queue.
     const currentProgress =
       models.length > 0 ? models.reduce((sum, model) => sum + model.progress, 0) / models.length : 0;
@@ -209,7 +224,7 @@ export function OnboardingModal({
         <div className="onboarding-modal">
           <h2 className="onboarding-title">Downloading models…</h2>
           <p className="onboarding-intro">
-            ~250 MB downloading to your browser cache. This only happens once — grab a coffee if your connection is slow.
+            Local models downloading to your browser cache. This only happens once — grab a coffee if your connection is slow.
           </p>
           <div className="onboarding-model-queue" aria-live="polite">
             {models.map((m) => (
@@ -255,7 +270,7 @@ export function OnboardingModal({
                 ))}
               </select>
             </label>
-            {config.provider !== "browser-local-gemma" && (
+            {config.provider !== "browser-local-gemma" && config.provider !== "browser-local-qwen" && (
               <label>
                 Model
                 {providerMeta.models ? (
@@ -285,7 +300,7 @@ export function OnboardingModal({
                   type="password"
                   value={config.credential ?? ""}
                   onChange={(e) => setConfig({ ...config, credential: e.target.value })}
-                  placeholder="Browser-local only"
+                  placeholder="Stays local in your browser - we don't see or store this"
                 />
               </label>
             )}
@@ -304,9 +319,11 @@ export function OnboardingModal({
             <button
               type="button"
               className="onboarding-back"
-              onClick={() => mode === "configure" ? onClose() : setStep("welcome")}
+              onClick={() =>
+                mode === "configure" || SKIP_WELCOME_SCREEN ? onClose() : setStep("welcome")
+              }
             >
-              {mode === "configure" ? "Cancel" : "Back"}
+              {mode === "configure" || SKIP_WELCOME_SCREEN ? "Cancel" : "Back"}
             </button>
             <button type="button" className="onboarding-primary" onClick={() => setStep("tts")}>
               Next
@@ -378,7 +395,7 @@ export function OnboardingModal({
                   type="password"
                   value={"credential" in ttsConfig ? (ttsConfig.credential ?? "") : ""}
                   onChange={(e) => setTtsConfig({ ...ttsConfig, credential: e.target.value } as TtsConfig)}
-                  placeholder="Browser-local only"
+                  placeholder="Stays local in your browser - we don't see or store this"
                 />
               </label>
             )}
@@ -441,7 +458,7 @@ export function OnboardingModal({
                 type="password"
                 value={"credential" in asrConfig ? (asrConfig.credential ?? "") : ""}
                 onChange={(e) => setAsrConfig({ ...asrConfig, credential: e.target.value } as AsrConfig)}
-                placeholder="Browser-local only"
+                placeholder="Stays local in your browser - we don't see or store this"
               />
             </label>
           )}

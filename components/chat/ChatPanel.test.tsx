@@ -2,7 +2,7 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
-import { ChatPanel } from "./ChatPanel";
+import { ChatPanel, _clearPreloadSessionsForTesting } from "./ChatPanel";
 import type { CharacterConfig } from "./ChatPanel";
 import { createLlmAdapter } from "@/lib/llm";
 import { createAsrAdapter, createTtsAdapter } from "@/lib/speech";
@@ -683,6 +683,7 @@ describe("ChatPanel speech input provider dropdown", () => {
 describe("ChatPanel local model preloading", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _clearPreloadSessionsForTesting();
   });
 
   it("does not start preloading on mount without shouldPreloadLocalModels", async () => {
@@ -713,7 +714,91 @@ describe("ChatPanel local model preloading", () => {
     });
   });
 
+  it("throttles rapid progress events and still reaches Ready after flush", async () => {
+    const { LocalGemmaWorkerClient } = await import("@/lib/llm/localGemmaWorker");
+    // Preload fires 50 rapid progress events then resolves — simulates many
+    // small-chunk download messages arriving on a slow connection.
+    vi.mocked(LocalGemmaWorkerClient).mockImplementationOnce(() => ({
+      preload: vi.fn().mockImplementation(
+        (_opts: unknown, onProgress: (p: { progress: number; message: string }) => void) => {
+          for (let i = 1; i <= 50; i++) onProgress({ progress: i * 2, message: `Loading ${i * 2}%` });
+          return Promise.resolve(undefined);
+        }
+      )
+    }));
+
+    render(
+      <ChatPanel
+        character={defaultCharacter}
+        onCharacterChange={vi.fn()}
+        onModelUrlChange={vi.fn()}
+        shouldPreloadLocalModels={true}
+      />
+    );
+
+    // waitFor retries until the 100ms throttle window flushes, then Ready is shown.
+    await waitFor(
+      () => {
+        // gemma goes Ready (Qwen is "Not used"), kokoro + distil-whisper go Ready too
+        expect(screen.getAllByText("Ready")).toHaveLength(3);
+      },
+      { timeout: 2000 }
+    );
+  });
+
   // The monotonic progress clamping logic (high-water-mark) is unit-tested
   // directly in chatPanelUtils.test.ts → "clampModelProgress".
+});
+
+// ── Qwen 3.5 local provider ───────────────────────────────────────────────────
+
+describe("ChatPanel Qwen 3.5 local provider", () => {
+  function selectProvider(providerId: string) {
+    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: providerId } });
+  }
+
+  it("browser-local-qwen appears in the provider dropdown", () => {
+    renderPanel();
+    selectProvider("browser-local-qwen");
+    expect(screen.getByLabelText("Model provider")).toHaveValue("browser-local-qwen");
+  });
+
+  it("hides Model control for browser-local-qwen (single local model)", () => {
+    renderPanel();
+    selectProvider("browser-local-qwen");
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+});
+
+// ── Active-only local model display ──────────────────────────────────────────
+
+describe("ChatPanel advanced panel shows only selected local models", () => {
+  it("shows only 3 models (gemma+kokoro+distil-whisper) by default (browser-local-gemma provider)", async () => {
+    renderPanel();
+    await new Promise<void>((r) => setTimeout(r, 0));
+    // Default: browser-local-gemma + kokoro + distil-whisper — qwen-local should NOT appear
+    expect(screen.getAllByText("Waiting")).toHaveLength(3);
+  });
+
+  it("does not show qwen-local row when provider is browser-local-gemma", async () => {
+    renderPanel();
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(screen.queryByText("Qwen 3.5 0.8B")).not.toBeInTheDocument();
+  });
+
+  it("shows qwen-local row when provider is browser-local-qwen", async () => {
+    renderPanel();
+    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "browser-local-qwen" } });
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(screen.getByText("Qwen 3.5 0.8B")).toBeInTheDocument();
+  });
+
+  it("hides gemma row when provider is browser-local-qwen", async () => {
+    renderPanel();
+    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "browser-local-qwen" } });
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(screen.queryByText("Gemma 4 E2B q8")).not.toBeInTheDocument();
+  });
 });
 
