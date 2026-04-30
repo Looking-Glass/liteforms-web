@@ -4,8 +4,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createLlmAdapter, getDefaultProviderConfig, getProviderLabel, normalizeProviderConfig } from "@/lib/llm";
 import { sanitizeAssistantText } from "@/lib/llm/output";
 import { LocalGemmaWorkerClient } from "@/lib/llm/localGemmaWorker";
-import type { BaseProviderConfig, ChatMessage, LlmProviderId } from "@/lib/llm";
-import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
+import type { BaseProviderConfig, ChatMessage } from "@/lib/llm";
+import { LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
 import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import {
   createAsrAdapter,
@@ -21,7 +21,7 @@ import {
 } from "@/lib/speech";
 import type { TtsResult } from "@/lib/speech";
 import { DistilWhisperWorkerClient, KokoroWorkerClient } from "@/lib/speech/workerClient";
-import type { AsrConfig, AsrProviderId, TtsConfig, TtsProviderId } from "@/lib/speech";
+import type { AsrConfig, TtsConfig } from "@/lib/speech";
 import { dispatchAvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
 import {
   capPreloadUiProgress,
@@ -29,8 +29,7 @@ import {
   formatBytes,
   formatCacheUsage,
   isModelCacheName,
-  normalizeHuggingfaceProgress,
-  updateEndpointMode
+  normalizeHuggingfaceProgress
 } from "./chatPanelUtils";
 import type { CacheUsage } from "./chatPanelUtils";
 
@@ -59,6 +58,8 @@ type ChatPanelProps = {
   onLocalModelLoadStateChange?: (state: LocalModelLoadState[]) => void;
   /** Called whenever the user changes any provider/model/credential setting mid-session. */
   onConfigChange?: (llm: BaseProviderConfig, tts: TtsConfig, asr: AsrConfig) => void;
+  /** Called when the user clicks the Configure button in Settings. */
+  onOpenConfigure?: () => void;
 };
 
 type ChatStatus = "idle" | "streaming" | "error";
@@ -99,7 +100,8 @@ export function ChatPanel({
   initialTtsConfig,
   initialAsrConfig,
   onLocalModelLoadStateChange,
-  onConfigChange
+  onConfigChange,
+  onOpenConfigure
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
@@ -231,77 +233,95 @@ export function ChatPanel({
     const wantDistilWhisper = normalizedAsrConfig.provider === "distil-whisper";
 
     async function runPreload() {
-      // Each branch marks unselected models as "ready / Not used" so the onboarding loading
-      // screen's Continue button can enable for any combination, including all-cloud configs.
+      // Check previously-downloaded models upfront. If a model is already in the
+      // browser cache we skip its worker entirely — only missing models download.
+      // This prevents re-running Transformers.js workers (and re-writing metadata)
+      // on every page load while still triggering downloads for newly-added models.
+      const meta = readLocalModelMetadata();
+      const prevDownloaded = new Set(meta?.downloadedIds ?? []);
+      let cacheHasFiles = false;
+      if (prevDownloaded.size > 0) {
+        const usageCheck = await getModelCacheUsage();
+        cacheHasFiles = usageCheck.fileCount > 0;
+      }
+      // A model is safe to skip only if it was previously recorded as downloaded
+      // AND the browser cache still contains files (i.e. it wasn't cleared).
+      const alreadyCached = (id: LocalModelId) =>
+        !preloadCancelledRef.current && prevDownloaded.has(id) && cacheHasFiles;
+
       if (wantGemma) {
-        await preloadLocalModel("gemma", () =>
-          localGemmaWorkerRef.current.preload?.({ model: LLM_PROVIDER_OPTIONS[0].defaultModel }, (progress) => {
-            const normalized = normalizeHuggingfaceProgress(progress.progress);
-            const capped = capPreloadUiProgress(normalized);
-            updateLocalModel("gemma", {
-              status: "loading",
-              ...(capped !== undefined ? { progress: capped } : {}),
-              message: progress.message ?? "Loading Gemma"
-            });
-          })
-        );
+        if (alreadyCached("gemma")) {
+          updateLocalModel("gemma", { status: "ready", progress: 100, message: "Cached" });
+        } else {
+          await preloadLocalModel("gemma", () =>
+            localGemmaWorkerRef.current.preload?.({ model: LLM_PROVIDER_OPTIONS[0].defaultModel }, (progress) => {
+              const normalized = normalizeHuggingfaceProgress(progress.progress);
+              const capped = capPreloadUiProgress(normalized);
+              updateLocalModel("gemma", {
+                status: "loading",
+                ...(capped !== undefined ? { progress: capped } : {}),
+                message: progress.message ?? "Loading Gemma"
+              });
+            })
+          );
+        }
       } else {
         updateLocalModel("gemma", { status: "ready", progress: 100, message: "Not used" });
       }
+
       if (wantKokoro) {
-        await preloadLocalModel("kokoro", () =>
-          kokoroWorkerRef.current.preload?.(normalizedTtsConfig, (progress) => {
-            const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
-            updateLocalModel("kokoro", {
-              status: "loading",
-              ...(capped !== undefined ? { progress: capped } : {}),
-              message: progress.message ?? "Loading Kokoro"
-            });
-          })
-        );
+        if (alreadyCached("kokoro")) {
+          updateLocalModel("kokoro", { status: "ready", progress: 100, message: "Cached" });
+        } else {
+          await preloadLocalModel("kokoro", () =>
+            kokoroWorkerRef.current.preload?.(normalizedTtsConfig, (progress) => {
+              const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
+              updateLocalModel("kokoro", {
+                status: "loading",
+                ...(capped !== undefined ? { progress: capped } : {}),
+                message: progress.message ?? "Loading Kokoro"
+              });
+            })
+          );
+        }
       } else {
         updateLocalModel("kokoro", { status: "ready", progress: 100, message: "Not used" });
       }
+
       if (wantDistilWhisper) {
-        await preloadLocalModel("distil-whisper", () =>
-          distilWhisperWorkerRef.current.preload?.(normalizedAsrConfig, (progress) => {
-            const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
-            updateLocalModel("distil-whisper", {
-              status: "loading",
-              ...(capped !== undefined ? { progress: capped } : {}),
-              message: progress.message ?? "Loading Distil-Whisper"
-            });
-          })
-        );
+        if (alreadyCached("distil-whisper")) {
+          updateLocalModel("distil-whisper", { status: "ready", progress: 100, message: "Cached" });
+        } else {
+          await preloadLocalModel("distil-whisper", () =>
+            distilWhisperWorkerRef.current.preload?.(normalizedAsrConfig, (progress) => {
+              const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
+              updateLocalModel("distil-whisper", {
+                status: "loading",
+                ...(capped !== undefined ? { progress: capped } : {}),
+                message: progress.message ?? "Loading Distil-Whisper"
+              });
+            })
+          );
+        }
       } else {
         updateLocalModel("distil-whisper", { status: "ready", progress: 100, message: "Not used" });
       }
+
       if (!preloadCancelledRef.current) {
-        persistLocalModelMetadata();
+        // Persist the union of previously-downloaded IDs and all newly-wanted IDs
+        // so future page loads can skip workers for any model that's now in cache.
+        const wantedIds: LocalModelId[] = [
+          ...(wantGemma ? (["gemma"] as const) : []),
+          ...(wantKokoro ? (["kokoro"] as const) : []),
+          ...(wantDistilWhisper ? (["distil-whisper"] as const) : [])
+        ];
+        persistLocalModelMetadata([...new Set([...prevDownloaded, ...wantedIds])] as LocalModelId[]);
         const usage = await getModelCacheUsage();
         if (!preloadCancelledRef.current) setCacheUsage(usage);
       }
     }
 
-    async function maybeRunPreload() {
-      // If models were successfully loaded in a prior session and Cache Storage
-      // still has the files, skip re-running the worker preloads — this prevents
-      // Transformers.js from re-writing its metadata on every page load.
-      const hasPriorMetadata = readLocalModelMetadata() !== null;
-      if (hasPriorMetadata && (wantGemma || wantKokoro || wantDistilWhisper)) {
-        const usage = await getModelCacheUsage();
-        if (usage.fileCount > 0 && !preloadCancelledRef.current) {
-          setLocalModelLoadState(
-            initialLocalModelLoadState.map((m) => ({ ...m, status: "ready", progress: 100, message: "Cached" }))
-          );
-          setCacheUsage(usage);
-          return;
-        }
-      }
-      await runPreload();
-    }
-
-    void maybeRunPreload();
+    void runPreload();
     return () => {
       preloadCancelledRef.current = true;
       // The module-level `preloadStartedSessions` is intentionally NOT cleared here.
@@ -558,88 +578,8 @@ export function ChatPanel({
     }
   }
 
-  function updateProvider(providerId: LlmProviderId) {
-    const option = LLM_PROVIDER_OPTIONS.find((provider) => provider.id === providerId) ?? LLM_PROVIDER_OPTIONS[0];
-    setConfig({
-      provider: option.id,
-      model: option.defaultModel,
-      baseUrl: option.defaultBaseUrl,
-      endpointMode: updateEndpointMode(option.id)
-    });
-  }
-
-  function updateTtsProvider(providerId: TtsProviderId) {
-    const opt = TTS_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? TTS_PROVIDER_OPTIONS[0];
-    if (providerId === "kokoro") {
-      setTtsConfig({ provider: "kokoro" });
-    } else if (providerId === "elevenlabs") {
-      setTtsConfig({ provider: "elevenlabs", voiceId: opt.defaultVoice ?? "Rachel", modelId: opt.defaultModel });
-    } else {
-      setTtsConfig({
-        provider: providerId as Exclude<TtsProviderId, "kokoro" | "elevenlabs">,
-        voice: opt.defaultVoice,
-        model: opt.defaultModel,
-        baseUrl: opt.defaultBaseUrl
-      } as TtsConfig);
-    }
-  }
-
-  function updateAsrProvider(providerId: AsrProviderId) {
-    const opt = STT_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? STT_PROVIDER_OPTIONS[0];
-    if (providerId === "distil-whisper") {
-      setAsrConfig({ provider: "distil-whisper" });
-    } else if (providerId === "elevenlabs") {
-      const sharedCredential =
-        ttsConfig.provider === "elevenlabs" && "credential" in ttsConfig ? ttsConfig.credential : undefined;
-      setAsrConfig({ provider: "elevenlabs", credential: sharedCredential, model: opt.defaultModel });
-    } else {
-      setAsrConfig({
-        provider: providerId as Exclude<AsrProviderId, "distil-whisper" | "elevenlabs">,
-        model: opt.defaultModel,
-        baseUrl: opt.defaultBaseUrl
-      } as AsrConfig);
-    }
-  }
-
   const ttsMeta = TTS_PROVIDER_OPTIONS.find((p) => p.id === ttsConfig.provider) ?? TTS_PROVIDER_OPTIONS[0];
   const sttMeta = STT_PROVIDER_OPTIONS.find((p) => p.id === asrConfig.provider) ?? STT_PROVIDER_OPTIONS[0];
-
-  function getTtsVoice() {
-    if (ttsConfig.provider === "elevenlabs") return ttsConfig.voiceId ?? ttsMeta.defaultVoice ?? "";
-    return "voice" in ttsConfig ? (ttsConfig.voice ?? ttsMeta.defaultVoice ?? "") : "";
-  }
-
-  function setTtsVoice(voice: string) {
-    if (ttsConfig.provider === "elevenlabs") {
-      setTtsConfig({ ...ttsConfig, voiceId: voice });
-    } else {
-      setTtsConfig({ ...ttsConfig, voice } as TtsConfig);
-    }
-  }
-
-  function getTtsModel() {
-    if (ttsConfig.provider === "elevenlabs") return ttsConfig.modelId ?? ttsMeta.defaultModel ?? "";
-    if (ttsConfig.provider === "deepgram") return ttsConfig.voice ?? ttsConfig.model ?? ttsMeta.defaultVoice ?? "";
-    return "model" in ttsConfig ? (ttsConfig.model ?? ttsMeta.defaultModel ?? "") : "";
-  }
-
-  function setTtsModel(model: string) {
-    if (ttsConfig.provider === "elevenlabs") {
-      setTtsConfig({ ...ttsConfig, modelId: model });
-    } else if (ttsConfig.provider === "deepgram") {
-      setTtsConfig({ ...ttsConfig, voice: model, model });
-    } else {
-      setTtsConfig({ ...ttsConfig, model } as TtsConfig);
-    }
-  }
-
-  function getSttModel() {
-    return "model" in asrConfig ? (asrConfig.model ?? sttMeta.defaultModel ?? "") : "";
-  }
-
-  function setSttModel(model: string) {
-    setAsrConfig({ ...asrConfig, model } as AsrConfig);
-  }
 
   function handleVrmLoad(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -736,141 +676,43 @@ export function ChatPanel({
         <summary>Settings</summary>
         <div className="panel-section-body">
 
-          {/* Provider */}
+          {/* Read-only provider summary */}
           <div className="model-settings">
             <label>
               Model provider
-              <select value={config.provider} onChange={(event) => updateProvider(event.target.value as LlmProviderId)}>
-                {LLM_PROVIDER_OPTIONS.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.label}
-                  </option>
-                ))}
-              </select>
+              <span style={{ color: "var(--text)", fontWeight: "normal" }}>{providerMeta.label}</span>
             </label>
-            {CREDENTIAL_PROVIDER_IDS.includes(config.provider) ? (
+            {config.provider !== "browser-local-gemma" && (
               <label>
-                Credential
-                <input
-                  type="password"
-                  value={config.credential ?? ""}
-                  onChange={(event) => setConfig({ ...config, credential: event.target.value })}
-                  placeholder="Browser-local only"
-                />
+                Model
+                <span style={{ color: "var(--text)", fontWeight: "normal" }}>{config.model}</span>
               </label>
-            ) : null}
+            )}
           </div>
-
-          {/* Voice */}
           <div className="speech-settings">
-            <div className="speech-grid">
-              <label>
-                Voice provider
-                <select
-                  value={ttsConfig.provider}
-                  onChange={(event) => updateTtsProvider(event.target.value as TtsProviderId)}
-                >
-                  {TTS_PROVIDER_OPTIONS.map((p) => (
-                    <option key={p.id} value={p.id}>{p.label}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Speech input provider
-                <select
-                  value={asrConfig.provider}
-                  onChange={(event) => updateAsrProvider(event.target.value as AsrProviderId)}
-                >
-                  {STT_PROVIDER_OPTIONS.map((p) => (
-                    <option key={p.id} value={p.id}>{p.label}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {ttsConfig.provider !== "kokoro" ? (
-              <label>
-                Voice credential
-                <input
-                  type="password"
-                  value={"credential" in ttsConfig ? ttsConfig.credential ?? "" : ""}
-                  onChange={(event) => setTtsConfig({ ...ttsConfig, credential: event.target.value } as TtsConfig)}
-                  placeholder="Browser-local only"
-                />
-              </label>
-            ) : null}
-            {sttMeta.needsCredential ? (
-              <label>
-                Transcription credential
-                <input
-                  type="password"
-                  value={"credential" in asrConfig ? asrConfig.credential ?? "" : ""}
-                  onChange={(event) => setAsrConfig({ ...asrConfig, credential: event.target.value } as AsrConfig)}
-                  placeholder="Browser-local only"
-                />
-              </label>
-            ) : null}
+            <label>
+              Voice provider
+              <span style={{ color: "var(--text)", fontWeight: "normal" }}>{ttsMeta.label}</span>
+            </label>
+            <label>
+              Speech input provider
+              <span style={{ color: "var(--text)", fontWeight: "normal" }}>{sttMeta.label}</span>
+            </label>
           </div>
 
-          {/* Advanced: model name, endpoint, local model status, cache, test buttons */}
+          <button
+            type="button"
+            className="btn-ghost"
+            style={{ justifyContent: "center", width: "100%" }}
+            onClick={onOpenConfigure}
+          >
+            Configure
+          </button>
+
+          {/* Advanced: local model status, cache, test buttons */}
           <details className="advanced-section">
             <summary>Advanced</summary>
             <div className="advanced-body">
-              <div className="model-settings">
-                {config.provider !== "browser-local-gemma" && (
-                  <label>
-                    Model
-                    {providerMeta.models ? (
-                      <select value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })}>
-                        {providerMeta.models.map((m) => (
-                          <option key={m.id} value={m.id}>{m.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input value={config.model} onChange={(event) => setConfig({ ...config, model: event.target.value })} />
-                    )}
-                  </label>
-                )}
-                {config.provider !== "browser-local-gemma" ? (
-                  <label>
-                    Endpoint
-                    <input
-                      value={config.baseUrl ?? providerMeta.defaultBaseUrl ?? ""}
-                      onChange={(event) => setConfig({ ...config, baseUrl: event.target.value })}
-                    />
-                  </label>
-                ) : null}
-                {isOpenClaw ? (
-                  <label className="inline-toggle">
-                    <input
-                      type="checkbox"
-                      checked={config.injectLiteformsPersona === true}
-                      onChange={(event) => setConfig({ ...config, injectLiteformsPersona: event.target.checked })}
-                    />
-                    Inject Liteforms persona
-                  </label>
-                ) : null}
-                {ttsConfig.provider === "elevenlabs" ? (
-                  <label>
-                    ElevenLabs voice ID
-                    <input
-                      value={ttsConfig.voiceId ?? "Rachel"}
-                      onChange={(event) => setTtsConfig({ ...ttsConfig, voiceId: event.target.value })}
-                    />
-                  </label>
-                ) : null}
-                {ttsConfig.provider === "deepgram" ? (
-                  <label>
-                    Deepgram voice model
-                    <input
-                      value={ttsConfig.voice ?? ttsConfig.model ?? "aura-asteria-en"}
-                      onChange={(event) =>
-                        setTtsConfig({ ...ttsConfig, voice: event.target.value, model: event.target.value })
-                      }
-                    />
-                  </label>
-                ) : null}
-              </div>
-
               <div className="local-model-progress">
                 <div className="cache-row">
                   <span>Local models</span>
@@ -975,13 +817,22 @@ export function ChatPanel({
   );
 }
 
-function persistLocalModelMetadata() {
+type LocalModelMetadata = {
+  version: number;
+  storedAt: string;
+  /** IDs of models that were actually downloaded in the most recent successful preload run. */
+  downloadedIds: string[];
+  models: Array<{ id: string; model: string; dtype: string; device: string }>;
+};
+
+function persistLocalModelMetadata(downloadedIds: LocalModelId[]) {
   try {
     localStorage.setItem(
       localModelStorageKey,
       JSON.stringify({
-        version: 1,
+        version: 2,
         storedAt: new Date().toISOString(),
+        downloadedIds,
         models: [
           { id: "gemma", model: LLM_PROVIDER_OPTIONS[0].defaultModel, dtype: "q4f16", device: "webgpu" },
           { id: "kokoro", model: "onnx-community/Kokoro-82M-v1.0-ONNX", dtype: "fp32", device: "webgpu" },
@@ -994,10 +845,11 @@ function persistLocalModelMetadata() {
   }
 }
 
-function readLocalModelMetadata(): unknown | null {
+function readLocalModelMetadata(): LocalModelMetadata | null {
   try {
     const raw = localStorage.getItem(localModelStorageKey);
-    return raw ? (JSON.parse(raw) as unknown) : null;
+    if (!raw) return null;
+    return JSON.parse(raw) as LocalModelMetadata;
   } catch {
     return null;
   }

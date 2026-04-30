@@ -16,6 +16,11 @@ export type OnboardingModalProps = {
   onUseCustom: (config: BaseProviderConfig, ttsConfig: TtsConfig, asrConfig: AsrConfig) => void;
   onClose: () => void;
   localModelLoadState?: LocalModelLoadState[];
+  /** Pre-populate fields and skip the welcome screen (used by the Settings Configure button). */
+  mode?: "configure";
+  initialLlmConfig?: BaseProviderConfig;
+  initialTtsConfig?: TtsConfig;
+  initialAsrConfig?: AsrConfig;
 };
 
 const llmProviderOptions = LLM_PROVIDER_OPTIONS;
@@ -34,11 +39,20 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
   );
 }
 
-export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModelLoadState }: OnboardingModalProps) {
-  const [step, setStep] = useState<OnboardingStep>("welcome");
-  const [config, setConfig] = useState<BaseProviderConfig>(getDefaultProviderConfig());
-  const [ttsConfig, setTtsConfig] = useState<TtsConfig>({ provider: "kokoro" });
-  const [asrConfig, setAsrConfig] = useState<AsrConfig>({ provider: "distil-whisper" });
+export function OnboardingModal({
+  onUseBuiltIn,
+  onUseCustom,
+  onClose,
+  localModelLoadState,
+  mode,
+  initialLlmConfig,
+  initialTtsConfig,
+  initialAsrConfig
+}: OnboardingModalProps) {
+  const [step, setStep] = useState<OnboardingStep>(mode === "configure" ? "llm" : "welcome");
+  const [config, setConfig] = useState<BaseProviderConfig>(initialLlmConfig ?? getDefaultProviderConfig());
+  const [ttsConfig, setTtsConfig] = useState<TtsConfig>(initialTtsConfig ?? { provider: "kokoro" });
+  const [asrConfig, setAsrConfig] = useState<AsrConfig>(initialAsrConfig ?? { provider: "distil-whisper" });
 
   function updateLlmProvider(providerId: LlmProviderId) {
     const option = llmProviderOptions.find((p) => p.id === providerId) ?? llmProviderOptions[0];
@@ -89,6 +103,18 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
   }
 
   function handleCustomStart() {
+    const needsLocalModels =
+      config.provider === "browser-local-gemma" ||
+      ttsConfig.provider === "kokoro" ||
+      asrConfig.provider === "distil-whisper";
+
+    if (mode === "configure" && !needsLocalModels) {
+      // All-cloud config: nothing to download, save and close immediately.
+      onUseCustom(config, ttsConfig, asrConfig);
+      onClose();
+      return;
+    }
+    // Show the loading step so the user can see download/cache-check progress.
     setStep("loading");
     onUseCustom(config, ttsConfig, asrConfig);
   }
@@ -263,10 +289,24 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
                 />
               </label>
             )}
+            {config.provider === "openclaw" && (
+              <label className="inline-toggle">
+                <input
+                  type="checkbox"
+                  checked={config.injectLiteformsPersona === true}
+                  onChange={(e) => setConfig({ ...config, injectLiteformsPersona: e.target.checked })}
+                />
+                Inject Liteforms persona
+              </label>
+            )}
           </fieldset>
           <div className="onboarding-footer">
-            <button type="button" className="onboarding-back" onClick={() => setStep("welcome")}>
-              Back
+            <button
+              type="button"
+              className="onboarding-back"
+              onClick={() => mode === "configure" ? onClose() : setStep("welcome")}
+            >
+              {mode === "configure" ? "Cancel" : "Back"}
             </button>
             <button type="button" className="onboarding-primary" onClick={() => setStep("tts")}>
               Next
@@ -411,7 +451,7 @@ export function OnboardingModal({ onUseBuiltIn, onUseCustom, onClose, localModel
             Back
           </button>
           <button type="button" className="onboarding-primary" onClick={handleCustomStart}>
-            Start Liteforms
+            {mode === "configure" ? "Save" : "Start Liteforms"}
           </button>
         </div>
       </div>

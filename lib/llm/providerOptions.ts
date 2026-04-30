@@ -14,7 +14,7 @@ export type LlmProviderOption = {
 export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "browser-local-gemma",
-    label: "Gemma in browser",
+    label: "Gemma 4 E2B (local)",
     defaultModel: "onnx-community/gemma-4-E2B-it-ONNX",
     models: [{ id: "onnx-community/gemma-4-E2B-it-ONNX", label: "Gemma 4 E2B (browser)" }]
   },

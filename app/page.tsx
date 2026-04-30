@@ -17,7 +17,7 @@ const onboardingStorageKey = "liteforms.onboardingMode";
 const defaultCharacter: CharacterConfig = {
   name: "Clawdia",
   pronouns: "SHE",
-  personality: "You are Clawdia, queen of the deep. You're cranky crustacean, but under that hard exoskeleton, you have a big heart. Wait, lobsters have hearts, right? And... just one? Who knows? I bet you do! You have a visual form of a cartoon lobster in a holographic display. Don't include markdown styling, bullet points, numbered lists, URLs, or emojis in your responses - just plain ole text. Be concise.",
+  personality: "You are Clawdia, queen of the deep. You're a cranky crustacean, but under that hard exoskeleton, you have a big heart. Wait, lobsters have hearts, right? And... just one? Who knows? I bet you do! You have a visual form of a cartoon lobster in a holographic display. Don't include markdown styling, bullet points, numbered lists, URLs, or emojis in your responses - just plain ole text. Be concise.",
   greeting: ""
 };
 
@@ -31,6 +31,7 @@ export default function HomePage() {
     return { name: saved.name, pronouns: saved.pronouns, personality: saved.personality, greeting: saved.greeting };
   });
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showConfigureModal, setShowConfigureModal] = useState(false);
   const [shouldPreloadLocalModels, setShouldPreloadLocalModels] = useState(false);
   const [initialLlmConfig, setInitialLlmConfig] = useState<BaseProviderConfig | undefined>(undefined);
   const [initialTtsConfig, setInitialTtsConfig] = useState<TtsConfig | undefined>(undefined);
@@ -126,6 +127,14 @@ export default function HomePage() {
     setShowOnboarding(false);
   }
 
+  function handleConfigureOpen() {
+    setShowConfigureModal(true);
+  }
+
+  function handleConfigureClose() {
+    setShowConfigureModal(false);
+  }
+
   return (
     <main className="stage">
       <section className="avatar-viewport" aria-label="Avatar preview">
@@ -146,12 +155,25 @@ export default function HomePage() {
         initialAsrConfig={initialAsrConfig}
         onLocalModelLoadStateChange={handleLocalModelLoadStateChange}
         onConfigChange={handleConfigChange}
+        onOpenConfigure={handleConfigureOpen}
       />
       {showOnboarding && (
         <OnboardingModal
           onUseBuiltIn={handleUseBuiltIn}
           onUseCustom={handleUseCustom}
           onClose={handleModalClose}
+          localModelLoadState={modalLoadState}
+        />
+      )}
+      {showConfigureModal && (
+        <OnboardingModal
+          mode="configure"
+          initialLlmConfig={initialLlmConfig}
+          initialTtsConfig={initialTtsConfig}
+          initialAsrConfig={initialAsrConfig}
+          onUseBuiltIn={handleUseBuiltIn}
+          onUseCustom={handleUseCustom}
+          onClose={handleConfigureClose}
           localModelLoadState={modalLoadState}
         />
       )}
