@@ -416,6 +416,30 @@ async function synthesizeOpenAiCompatible(
 
 // ── Google Gemini TTS ──────────────────────────────────────────────────────────
 
+type GoogleInlineDataPart = { mimeType?: string; mime_type?: string; data?: string };
+
+/** Walks the generateContent response, accepting both camelCase and snake_case
+ *  inline-data keys so the code is resilient to Gemini API formatting variations. */
+export function extractGoogleInlineData(
+  payload: unknown
+): { mimeType: string | undefined; data: string } | undefined {
+  const candidates = (payload as { candidates?: unknown[] })?.candidates;
+  if (!Array.isArray(candidates)) return undefined;
+  for (const candidate of candidates) {
+    const parts = (candidate as { content?: { parts?: unknown[] } })?.content?.parts;
+    if (!Array.isArray(parts)) continue;
+    for (const part of parts) {
+      const p = part as { inlineData?: GoogleInlineDataPart; inline_data?: GoogleInlineDataPart };
+      const inline = p.inlineData ?? p.inline_data;
+      const data = typeof inline?.data === "string" && inline.data ? inline.data : undefined;
+      if (!data) continue;
+      const mimeType = inline?.mimeType ?? inline?.mime_type;
+      return { mimeType, data };
+    }
+  }
+  return undefined;
+}
+
 async function synthesizeGoogle(
   text: string,
   config: { credential: string; baseUrl: string; model: string; voice: string },
@@ -429,32 +453,16 @@ async function synthesizeGoogle(
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voice } } }
     }
   };
-  // #region agent log
-  console.log('[dbg-f2778a] google-tts-request', {model:config.model, voice:config.voice, urlWithoutKey:url.replace(/key=[^&]+/,'key=REDACTED'), body:requestBody});
-  // #endregion
   const response = await fetchImpl(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody)
   });
-  // #region agent log
-  console.log('[dbg-f2778a] google-tts-response-status', {status:response.status, ok:response.ok, statusText:response.statusText});
-  // #endregion
   if (!response.ok) {
-    const errText = await response.text().catch(() => "(unreadable)");
-    // #region agent log
-    console.log('[dbg-f2778a] google-tts-http-error', {status:response.status, body:errText.slice(0,800)});
-    // #endregion
     throw new Error(`Google TTS failed with ${response.status}`);
   }
   const data = await response.json();
-  // #region agent log
-  console.log('[dbg-f2778a] google-tts-response-body', {hasError:!!data?.error, errorCode:data?.error?.code, errorMsg:data?.error?.message, candidatesLength:data?.candidates?.length, finishReason:data?.candidates?.[0]?.finishReason, contentPartsLength:data?.candidates?.[0]?.content?.parts?.length, part0Keys:data?.candidates?.[0]?.content?.parts?.[0] ? Object.keys(data.candidates[0].content.parts[0]) : null, mimeType:data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.mimeType, hasInlineData:!!data?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data, rawData:JSON.stringify(data).slice(0,600)});
-  console.log('[dbg-f2778a] google-tts-raw-json', JSON.stringify(data).slice(0, 800));
-  // #endregion
-  const part = data?.candidates?.[0]?.content?.parts?.[0]?.inlineData as
-    | { mimeType: string; data: string }
-    | undefined;
+  const part = extractGoogleInlineData(data);
   if (!part) throw new Error("Google TTS: no audio in response");
   const audio = Uint8Array.from(atob(part.data), (c) => c.charCodeAt(0)).buffer;
   const rawMime = (part.mimeType ?? "").toLowerCase();

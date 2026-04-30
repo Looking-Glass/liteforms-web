@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createTtsAdapter, splitSpeakableText, IncrementalSpeechBuffer, rewriteDecimalsForTts } from "./tts";
+import { createTtsAdapter, extractGoogleInlineData, splitSpeakableText, IncrementalSpeechBuffer, rewriteDecimalsForTts } from "./tts";
 import type { TtsWorkerLike } from "./types";
 
 // ── IncrementalSpeechBuffer ────────────────────────────────────────────────────
@@ -239,6 +239,52 @@ describe("TTS adapters", () => {
   });
 });
 
+// ── extractGoogleInlineData ────────────────────────────────────────────────────
+
+describe("extractGoogleInlineData", () => {
+  const b64 = btoa(String.fromCharCode(1, 2, 3));
+
+  it("extracts camelCase inlineData from a well-formed response", () => {
+    const payload = { candidates: [{ content: { parts: [{ inlineData: { mimeType: "audio/l16; rate=24000", data: b64 } }] } }] };
+    const result = extractGoogleInlineData(payload);
+    expect(result?.data).toBe(b64);
+    expect(result?.mimeType).toBe("audio/l16; rate=24000");
+  });
+
+  it("extracts snake_case inline_data from response", () => {
+    const payload = { candidates: [{ content: { parts: [{ inline_data: { mimeType: "audio/l16; rate=24000", data: b64 } }] } }] };
+    expect(extractGoogleInlineData(payload)?.data).toBe(b64);
+  });
+
+  it("prefers inlineData over inline_data when both present", () => {
+    const payload = { candidates: [{ content: { parts: [{ inlineData: { mimeType: "audio/wav", data: b64 }, inline_data: { mimeType: "audio/junk", data: "other" } }] } }] };
+    expect(extractGoogleInlineData(payload)?.mimeType).toBe("audio/wav");
+  });
+
+  it("extracts snake_case mime_type from inline part", () => {
+    const payload = { candidates: [{ content: { parts: [{ inlineData: { mime_type: "audio/l16; rate=24000", data: b64 } }] } }] };
+    expect(extractGoogleInlineData(payload)?.mimeType).toBe("audio/l16; rate=24000");
+  });
+
+  it("skips parts with no data and returns the first part that has data", () => {
+    const payload = { candidates: [{ content: { parts: [{ inlineData: { mimeType: "audio/wav", data: "" } }, { inlineData: { mimeType: "audio/wav", data: b64 } }] } }] };
+    expect(extractGoogleInlineData(payload)?.data).toBe(b64);
+  });
+
+  it("returns undefined for empty candidates", () => {
+    expect(extractGoogleInlineData({ candidates: [] })).toBeUndefined();
+  });
+
+  it("returns undefined when payload is null", () => {
+    expect(extractGoogleInlineData(null)).toBeUndefined();
+  });
+
+  it("returns undefined when parts have no inlineData", () => {
+    const payload = { candidates: [{ content: { parts: [{ text: "hello" }] } }] };
+    expect(extractGoogleInlineData(payload)).toBeUndefined();
+  });
+});
+
 // ── New TTS adapters ───────────────────────────────────────────────────────────
 
 describe("new TTS adapters", () => {
@@ -294,6 +340,64 @@ describe("new TTS adapters", () => {
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain("key=goog-key");
     expect(url).toContain("gemini-3.1-flash-tts-preview");
+  });
+
+  it("Google TTS: normalises audio/l16 PCM mime type to audio/pcm with correct sampleRate", async () => {
+    const b64 = btoa(String.fromCharCode(1, 2, 3));
+    const fetchMock = mockFetch(async () =>
+      Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "audio/l16; rate=24000; channels=1", data: b64 } }] } }] })
+    );
+    const adapter = createTtsAdapter({
+      config: { provider: "google", credential: "goog-key", voice: "Aoede" },
+      fetch: fetchMock
+    });
+
+    const result = await adapter.synthesize("Hi");
+    expect(result.mimeType).toBe("audio/pcm");
+    expect(result.sampleRate).toBe(24000);
+    expect(result.audio.byteLength).toBe(3);
+  });
+
+  it("Google TTS: accepts snake_case inline_data key from the API response", async () => {
+    const b64 = btoa(String.fromCharCode(4, 5, 6));
+    const fetchMock = mockFetch(async () =>
+      Response.json({ candidates: [{ content: { parts: [{ inline_data: { mimeType: "audio/l16; rate=24000", data: b64 } }] } }] })
+    );
+    const adapter = createTtsAdapter({
+      config: { provider: "google", credential: "goog-key", voice: "Kore" },
+      fetch: fetchMock
+    });
+
+    const result = await adapter.synthesize("Hi");
+    expect(result.mimeType).toBe("audio/pcm");
+    expect(result.audio.byteLength).toBe(3);
+  });
+
+  it("Google TTS: accepts snake_case mime_type inside inlineData", async () => {
+    const b64 = btoa(String.fromCharCode(7, 8, 9));
+    const fetchMock = mockFetch(async () =>
+      Response.json({ candidates: [{ content: { parts: [{ inlineData: { mime_type: "audio/l16; rate=24000", data: b64 } }] } }] })
+    );
+    const adapter = createTtsAdapter({
+      config: { provider: "google", credential: "goog-key", voice: "Kore" },
+      fetch: fetchMock
+    });
+
+    const result = await adapter.synthesize("Hi");
+    expect(result.mimeType).toBe("audio/pcm");
+    expect(result.sampleRate).toBe(24000);
+  });
+
+  it("Google TTS: throws when candidates array is empty", async () => {
+    const fetchMock = mockFetch(async () =>
+      Response.json({ candidates: [] })
+    );
+    const adapter = createTtsAdapter({
+      config: { provider: "google", credential: "goog-key", voice: "Kore" },
+      fetch: fetchMock
+    });
+
+    await expect(adapter.synthesize("Hi")).rejects.toThrow("no audio in response");
   });
 
   it("calls xAI TTS with Bearer auth (OpenAI-compatible) at x.ai endpoint", async () => {
