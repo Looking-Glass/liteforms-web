@@ -2,6 +2,12 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createLlmAdapter, getDefaultProviderConfig, getProviderLabel, normalizeProviderConfig } from "@/lib/llm";
+import { OpenClawSetupHint } from "@/components/openclaw/OpenClawSetupHint";
+import {
+  OPENCLAW_GATEWAY_TOKEN_HELP,
+  OPENCLAW_GATEWAY_TOKEN_LABEL,
+  OPENCLAW_GATEWAY_TOKEN_PLACEHOLDER
+} from "@/lib/llm/openclawSetup";
 import { sanitizeAssistantText } from "@/lib/llm/output";
 import { LocalGemmaWorkerClient } from "@/lib/llm/localGemmaWorker";
 import type { BaseProviderConfig, ChatMessage, LlmProviderId } from "@/lib/llm";
@@ -845,6 +851,20 @@ export function ChatPanel({
                 )}
               </label>
             )}
+            {isOpenClaw && (
+              <label>
+                {OPENCLAW_GATEWAY_TOKEN_LABEL}
+                <input
+                  aria-label={OPENCLAW_GATEWAY_TOKEN_LABEL}
+                  type="password"
+                  value={config.credential ?? ""}
+                  onChange={(e) => setConfig({ ...config, credential: e.target.value })}
+                  placeholder={OPENCLAW_GATEWAY_TOKEN_PLACEHOLDER}
+                />
+                <span className="field-help">{OPENCLAW_GATEWAY_TOKEN_HELP}</span>
+              </label>
+            )}
+            {isOpenClaw && <OpenClawSetupHint />}
           </div>
           <div className="speech-settings">
             <label>

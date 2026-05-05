@@ -308,6 +308,55 @@ button:disabled {
   padding: 10px 12px;
 }
 
+.openclaw-setup {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  display: grid;
+  font-size: 12px;
+  gap: 8px;
+  line-height: 1.5;
+  padding: 10px 12px;
+}
+
+.openclaw-setup-header {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.openclaw-setup p {
+  margin: 0;
+}
+
+.openclaw-command-row {
+  align-items: stretch;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.openclaw-command-row code {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  display: block;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 8px;
+  white-space: nowrap;
+}
+
+.openclaw-command-row button {
+  min-width: 72px;
+}
+
 .vrm-row {
   align-items: center;
   display: flex;
@@ -335,6 +384,13 @@ button:disabled {
   font-size: 12px;
   font-weight: 500;
   gap: 5px;
+}
+
+.field-help {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.45;
 }
 
 /* ── Local model progress ── */
@@ -577,7 +633,11 @@ button:disabled {
   justify-content: center;
   padding: 24px;
   position: fixed;
-  z-index: 100;
+  z-index: 1000;
+}
+
+#VRButton {
+  z-index: 20 !important;
 }
 
 .onboarding-modal {

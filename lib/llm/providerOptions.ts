@@ -191,9 +191,9 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "openclaw",
     label: "OpenClaw Gateway",
-    defaultModel: "default",
-    defaultBaseUrl: "ws://127.0.0.1:18789"
-    // No static model list — OpenClaw routes to whichever provider is configured
+    defaultModel: "openclaw/default",
+    defaultBaseUrl: "http://127.0.0.1:18789/v1"
+    // OpenClaw exposes agent targets through its OpenAI-compatible HTTP gateway
   },
   {
     id: "browser-local-qwen",

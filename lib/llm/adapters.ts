@@ -1,21 +1,19 @@
 import { normalizeProviderConfig } from "./config";
 import { LocalGemmaWorkerClient } from "./localGemmaWorker";
-import { buildOpenClawConnectPayload, buildOpenClawSendPayload, buildOpenClawSubscribePayload, parseOpenClawMessage } from "./openclaw";
 import { buildChatMessages } from "./persona";
 import { parseAnthropicSseLine, parseOllamaJsonLine, parseOpenAiCompatibleSseLine } from "./stream-parsers";
-import type { BaseProviderConfig, ChatMessage, ChatRequest, FetchLike, LlmAdapter, LocalGemmaWorkerLike, WebSocketFactory } from "./types";
+import type { BaseProviderConfig, ChatMessage, ChatRequest, FetchLike, LlmAdapter, LocalGemmaWorkerLike } from "./types";
 
 type CreateAdapterInput = {
   config: BaseProviderConfig;
   fetch?: FetchLike;
-  webSocketFactory?: WebSocketFactory;
   localGemmaWorker?: LocalGemmaWorkerLike;
 };
 
 /** Cloud providers whose APIs block direct browser requests due to CORS. */
 const CLOUD_PROVIDER_IDS = new Set<string>([
   "openai", "anthropic", "google", "xai", "mistral",
-  "cerebras", "nvidia", "openrouter", "groq", "together", "fireworks", "qwen"
+  "cerebras", "nvidia", "openrouter", "groq", "together", "fireworks", "qwen", "openclaw"
 ]);
 
 export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
@@ -23,10 +21,6 @@ export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
   const fetchImpl = input.fetch ?? fetch;
   // When no custom fetch is injected, assume browser context: route cloud providers through proxy
   const useProxy = !input.fetch;
-
-  if (config.provider === "openclaw") {
-    return createOpenClawAdapter(config, input.webSocketFactory);
-  }
 
   return {
     id: config.provider,
@@ -93,7 +87,7 @@ async function* streamOpenAiCompatible(request: ChatRequest, fetchImpl: FetchLik
     body: JSON.stringify({ model: config.model, messages, stream: true })
   });
 
-  yield* readTextStream(response, parseOpenAiCompatibleSseLine);
+  yield* readTextStream(response, parseOpenAiCompatibleSseLine, config);
 }
 
 async function* streamAnthropic(request: ChatRequest, fetchImpl: FetchLike): AsyncIterable<string> {
@@ -125,7 +119,7 @@ async function* streamAnthropic(request: ChatRequest, fetchImpl: FetchLike): Asy
     })
   });
 
-  yield* readTextStream(response, parseAnthropicSseLine);
+  yield* readTextStream(response, parseAnthropicSseLine, config);
 }
 
 async function* streamOllama(request: ChatRequest, fetchImpl: FetchLike): AsyncIterable<string> {
@@ -143,7 +137,7 @@ async function* streamOllama(request: ChatRequest, fetchImpl: FetchLike): AsyncI
     body: JSON.stringify({ model: config.model, messages, stream: true })
   });
 
-  yield* readTextStream(response, parseOllamaJsonLine);
+  yield* readTextStream(response, parseOllamaJsonLine, config);
 }
 
 function streamBrowserLocalGemma(request: ChatRequest, worker: LocalGemmaWorkerLike = new LocalGemmaWorkerClient()): AsyncIterable<string> {
@@ -159,59 +153,13 @@ function streamBrowserLocalGemma(request: ChatRequest, worker: LocalGemmaWorkerL
   });
 }
 
-function createOpenClawAdapter(config: BaseProviderConfig, webSocketFactory?: WebSocketFactory): LlmAdapter {
-  return {
-    id: "openclaw",
-    async *streamText(request: ChatRequest): AsyncIterable<string> {
-      const socketFactory = webSocketFactory ?? ((url) => new WebSocket(url));
-      const socket = socketFactory(requireBaseUrl(config));
-      const messages = buildChatMessages({
-        provider: "openclaw",
-        persona: request.persona,
-        injectLiteformsPersona: request.config.injectLiteformsPersona,
-        messages: request.messages
-      });
-
-      const queue: string[] = [];
-      let done = false;
-      let opened = false;
-
-      socket.addEventListener("open", () => {
-        opened = true;
-        socket.send(JSON.stringify(buildOpenClawConnectPayload({ token: request.config.credential })));
-        socket.send(JSON.stringify(buildOpenClawSubscribePayload()));
-        socket.send(JSON.stringify(buildOpenClawSendPayload({ model: request.config.model, messages })));
-      });
-      socket.addEventListener("message", (event) => {
-        const parsed = parseOpenClawMessage(safeJson(String((event as MessageEvent).data)));
-        if (parsed?.type === "delta") {
-          queue.push(parsed.text);
-        }
-        if (parsed?.type === "done") {
-          done = true;
-        }
-      });
-      socket.addEventListener("close", () => {
-        done = true;
-      });
-
-      while (!done || queue.length > 0 || !opened) {
-        while (queue.length > 0) {
-          yield queue.shift() ?? "";
-        }
-        if (!done) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-      }
-
-      socket.close();
-    }
-  };
-}
-
-async function* readTextStream(response: Response, parser: (line: string) => string | null): AsyncIterable<string> {
+async function* readTextStream(
+  response: Response,
+  parser: (line: string) => string | null,
+  config: BaseProviderConfig
+): AsyncIterable<string> {
   if (!response.ok) {
-    throw new Error(`LLM provider request failed with ${response.status}`);
+    throw new Error(formatProviderResponseError(response, config));
   }
   if (!response.body) {
     return;
@@ -243,6 +191,24 @@ async function* readTextStream(response: Response, parser: (line: string) => str
   }
 }
 
+function formatProviderResponseError(response: Response, config: BaseProviderConfig) {
+  if (config.provider === "openclaw" && response.status === 404) {
+    return [
+      "OpenClaw returned 404 for /v1/chat/completions.",
+      "Enable gateway.http.endpoints.chatCompletions.enabled in OpenClaw, then restart or reload the Gateway.",
+      `Configured endpoint: ${trimTrailingSlash(requireBaseUrl(config))}/chat/completions`
+    ].join(" ");
+  }
+  if (config.provider === "openclaw" && response.status === 401) {
+    return [
+      "OpenClaw returned 401 for /v1/chat/completions.",
+      "Enter the OpenClaw gateway token from gateway.auth.token as the OpenClaw gateway token in Liteforms.",
+      `Configured endpoint: ${trimTrailingSlash(requireBaseUrl(config))}/chat/completions`
+    ].join(" ");
+  }
+  return `LLM provider request failed with ${response.status}`;
+}
+
 export function providerNeedsCredential(config: BaseProviderConfig) {
   return [
     "openai", "chatgpt-subscription", "anthropic", "claude-subscription", "openrouter", "openclaw",
@@ -263,12 +229,4 @@ function requireBaseUrl(config: BaseProviderConfig) {
 
 function trimTrailingSlash(input: string) {
   return input.replace(/\/+$/, "");
-}
-
-function safeJson(input: string): unknown {
-  try {
-    return JSON.parse(input);
-  } catch {
-    return null;
-  }
 }

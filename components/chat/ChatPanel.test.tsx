@@ -5,6 +5,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import { ChatPanel, _clearPreloadSessionsForTesting } from "./ChatPanel";
 import type { CharacterConfig } from "./ChatPanel";
 import { createLlmAdapter } from "@/lib/llm";
+import { OPENCLAW_ENABLE_CHAT_COMPLETIONS_COMMAND } from "@/lib/llm/openclawSetup";
 import { createAsrAdapter, createTtsAdapter } from "@/lib/speech";
 
 afterEach(cleanup);
@@ -231,6 +232,46 @@ describe("ChatPanel OpenClaw persona handling", () => {
     fireEvent.change(providerSelect, { target: { value: "openclaw" } });
     fireEvent.change(providerSelect, { target: { value: "openai" } });
     expect(screen.getByPlaceholderText("Character name")).toBeInTheDocument();
+  });
+
+  it("shows and copies the OpenClaw chat completions setup command", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText }
+    });
+
+    renderPanel();
+    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "openclaw" } });
+
+    expect(screen.getByText(OPENCLAW_ENABLE_CHAT_COMPLETIONS_COMMAND)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /copy openclaw setup command/i }));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(OPENCLAW_ENABLE_CHAT_COMPLETIONS_COMMAND));
+  });
+
+  it("shows the OpenClaw gateway token field in chat settings", () => {
+    renderPanel();
+    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "openclaw" } });
+
+    expect(screen.getByLabelText("OpenClaw gateway token")).toBeInTheDocument();
+    expect(screen.getByText(/required when OpenClaw gateway auth mode is token/i)).toBeInTheDocument();
+  });
+
+  it("sends the OpenClaw gateway token as the active LLM credential", async () => {
+    renderPanel();
+    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "openclaw" } });
+    fireEvent.change(screen.getByLabelText("OpenClaw gateway token"), { target: { value: "gateway-token" } });
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(createLlmAdapter)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({ provider: "openclaw", credential: "gateway-token" })
+        })
+      );
+    });
   });
 });
 

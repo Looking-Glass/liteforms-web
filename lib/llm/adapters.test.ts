@@ -67,6 +67,60 @@ describe("LLM adapters", () => {
     );
   });
 
+  it("streams OpenClaw through its OpenAI-compatible HTTP gateway while keeping the OpenClaw provider", async () => {
+    const fetchMock = vi.fn(async () =>
+      streamResponse(['data: {"choices":[{"delta":{"content":"Claw"}}]}\n\n', "data: [DONE]\n\n"])
+    );
+    const config: BaseProviderConfig = {
+      provider: "openclaw",
+      model: "openclaw/default",
+      baseUrl: "http://127.0.0.1:18789/v1",
+      credential: "gateway-token"
+    };
+    const adapter = createLlmAdapter({ config, fetch: fetchMock });
+
+    await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+      "Claw"
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://127.0.0.1:18789/v1/chat/completions",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer gateway-token" }),
+        body: expect.stringContaining('"model":"openclaw/default"')
+      })
+    );
+  });
+
+  it("explains OpenClaw 404 responses as a disabled OpenAI-compatible endpoint", async () => {
+    const fetchMock = vi.fn(async () => new Response("not found", { status: 404 }));
+    const config: BaseProviderConfig = {
+      provider: "openclaw",
+      model: "openclaw/default",
+      baseUrl: "http://127.0.0.1:18789/v1"
+    };
+    const adapter = createLlmAdapter({ config, fetch: fetchMock });
+
+    await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).rejects.toThrow(
+      /gateway\.http\.endpoints\.chatCompletions\.enabled/
+    );
+  });
+
+  it("explains OpenClaw 401 responses as a missing or invalid gateway token", async () => {
+    const fetchMock = vi.fn(async () => new Response("unauthorized", { status: 401 }));
+    const config: BaseProviderConfig = {
+      provider: "openclaw",
+      model: "openclaw/default",
+      baseUrl: "http://127.0.0.1:18789/v1"
+    };
+    const adapter = createLlmAdapter({ config, fetch: fetchMock });
+
+    await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).rejects.toThrow(
+      /gateway\.auth\.token/
+    );
+  });
+
   it("streams Anthropic Messages API SSE directly", async () => {
     const fetchMock = vi.fn(async () =>
       streamResponse([
@@ -157,6 +211,39 @@ describe("LLM adapters", () => {
       expect(proxyFetchMock).toHaveBeenCalledWith(
         "/api/llm/stream",
         expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    it("routes OpenClaw through proxy when no custom fetch is provided to avoid browser CORS", async () => {
+      const proxyFetchMock = vi.fn(async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("OpenClaw proxied"));
+              controller.close();
+            }
+          })
+        )
+      );
+      vi.stubGlobal("fetch", proxyFetchMock);
+
+      const config: BaseProviderConfig = {
+        provider: "openclaw",
+        model: "openclaw/default",
+        baseUrl: "http://127.0.0.1:18789/v1"
+      };
+      const adapter = createLlmAdapter({ config });
+
+      await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+        "OpenClaw proxied"
+      );
+
+      expect(proxyFetchMock).toHaveBeenCalledWith(
+        "/api/llm/stream",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"provider":"openclaw"')
+        })
       );
     });
 

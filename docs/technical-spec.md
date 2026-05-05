@@ -563,17 +563,12 @@ interface BrowserLlmProvider {
 
 `openclaw`
 
-- Direct browser WebSocket calls to configured OpenClaw Gateway endpoint.
+- Direct browser HTTP calls to OpenClaw's OpenAI-compatible Gateway endpoint.
 - Provider config:
-  - gateway URL, default `ws://127.0.0.1:18789`
+  - Gateway OpenAI-compatible base URL, default `http://127.0.0.1:18789/v1`
   - token/password if required
-  - model/provider alias
-- Match AI-Avatar `OpenClawLLM` behavior:
-  - wait for `connect.challenge`
-  - send `connect` with operator role/scopes and token
-  - subscribe with `sessions.messages.subscribe`
-  - send turn with `chat.send`
-  - read `session.message` deltas until done
+  - agent target, default `openclaw/default`
+- Use `POST /v1/chat/completions` with standard OpenAI-compatible streaming while keeping OpenClaw as a first-class Liteforms provider in the UI.
 - Must be able to target OpenClaw's OpenAI, OpenAI-Codex, OpenRouter, Ollama, LM Studio, and Anthropic-backed models through the gateway when exposed by that gateway.
 - When a character is configured to use OpenClaw, do not build or inject the default AI-Avatar persona system prompt unless the user explicitly enables Liteforms persona injection. OpenClaw agents may already carry personality and instructions.
 

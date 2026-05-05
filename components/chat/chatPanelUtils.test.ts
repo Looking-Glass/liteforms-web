@@ -58,7 +58,6 @@ describe("updateEndpointMode", () => {
   it("returns native for browser-local and native-protocol providers", () => {
     expect(updateEndpointMode("browser-local-gemma")).toBe("native");
     expect(updateEndpointMode("ollama")).toBe("native");
-    expect(updateEndpointMode("openclaw")).toBe("native");
   });
 
   it("returns openai-compatible for all hosted API providers", () => {
@@ -68,6 +67,7 @@ describe("updateEndpointMode", () => {
     expect(updateEndpointMode("chatgpt-subscription")).toBe("openai-compatible");
     expect(updateEndpointMode("claude-subscription")).toBe("openai-compatible");
     expect(updateEndpointMode("lmstudio")).toBe("openai-compatible");
+    expect(updateEndpointMode("openclaw")).toBe("openai-compatible");
   });
 });
 

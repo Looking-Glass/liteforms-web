@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { OnboardingModal } from "./OnboardingModal";
 import type { LocalModelLoadState } from "@/components/chat/ChatPanel";
+import { OPENCLAW_ENABLE_CHAT_COMPLETIONS_COMMAND } from "@/lib/llm/openclawSetup";
 
 afterEach(cleanup);
 
@@ -306,6 +307,39 @@ describe("OnboardingModal LLM step", () => {
       target: { value: "openai" }
     });
     expect(screen.getByRole("textbox", { name: /endpoint/i })).toBeInTheDocument();
+  });
+
+  it("shows the OpenClaw setup command when OpenClaw is selected", () => {
+    renderModal();
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "openclaw" }
+    });
+
+    expect(screen.getByText(OPENCLAW_ENABLE_CHAT_COMPLETIONS_COMMAND)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy openclaw setup command/i })).toBeInTheDocument();
+  });
+
+  it("defaults OpenClaw onboarding fields to the local gateway model and endpoint", () => {
+    renderModal();
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "openclaw" }
+    });
+
+    expect(screen.getByRole("textbox", { name: "Model" })).toHaveValue("openclaw/default");
+    expect(screen.getByRole("textbox", { name: /endpoint/i })).toHaveValue("http://127.0.0.1:18789/v1");
+  });
+
+  it("labels the OpenClaw credential as the gateway token", () => {
+    renderModal();
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "openclaw" }
+    });
+
+    expect(screen.getByLabelText("OpenClaw gateway token")).toBeInTheDocument();
+    expect(screen.getByText(/required when OpenClaw gateway auth mode is token/i)).toBeInTheDocument();
   });
 
   it("hides endpoint field for browser-local-gemma", () => {

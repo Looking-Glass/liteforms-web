@@ -18,8 +18,9 @@ describe("LLM provider config", () => {
       baseUrl: "http://localhost:11434",
       endpointMode: "native"
     });
-    expect(providerConfigSchema.parse({ provider: "openclaw", model: "default" })).toMatchObject({
-      baseUrl: "ws://127.0.0.1:18789"
+    expect(providerConfigSchema.parse({ provider: "openclaw", model: "openclaw/default" })).toMatchObject({
+      baseUrl: "http://127.0.0.1:18789/v1",
+      endpointMode: "openai-compatible"
     });
   });
 

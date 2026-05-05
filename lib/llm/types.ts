@@ -49,14 +49,6 @@ export type ChatRequest = {
 
 export type FetchLike = typeof fetch;
 
-export type WebSocketLike = {
-  send(data: string): void;
-  close(): void;
-  addEventListener(type: "open" | "message" | "error" | "close", listener: (event: MessageEvent | Event) => void): void;
-};
-
-export type WebSocketFactory = (url: string) => WebSocketLike;
-
 export type LlmAdapter = {
   id: LlmProviderId;
   streamText(request: ChatRequest): AsyncIterable<string>;

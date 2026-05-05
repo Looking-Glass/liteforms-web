@@ -7,6 +7,12 @@ import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/provide
 import type { AsrConfig, AsrProviderId, TtsConfig, TtsProviderId } from "@/lib/speech";
 import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import { updateEndpointMode } from "@/components/chat/chatPanelUtils";
+import { OpenClawSetupHint } from "@/components/openclaw/OpenClawSetupHint";
+import {
+  OPENCLAW_GATEWAY_TOKEN_HELP,
+  OPENCLAW_GATEWAY_TOKEN_LABEL,
+  OPENCLAW_GATEWAY_TOKEN_PLACEHOLDER
+} from "@/lib/llm/openclawSetup";
 import type { LocalModelLoadState } from "@/components/chat/ChatPanel";
 
 type OnboardingStep = "welcome" | "llm" | "tts" | "stt" | "loading";
@@ -295,13 +301,19 @@ export function OnboardingModal({
             )}
             {showCredential && (
               <label>
-                Credential
+                {config.provider === "openclaw" ? OPENCLAW_GATEWAY_TOKEN_LABEL : "Credential"}
                 <input
+                  aria-label={config.provider === "openclaw" ? OPENCLAW_GATEWAY_TOKEN_LABEL : undefined}
                   type="password"
                   value={config.credential ?? ""}
                   onChange={(e) => setConfig({ ...config, credential: e.target.value })}
-                  placeholder="Stays local in your browser - we don't see or store this"
+                  placeholder={
+                    config.provider === "openclaw"
+                      ? OPENCLAW_GATEWAY_TOKEN_PLACEHOLDER
+                      : "Stays local in your browser - we don't see or store this"
+                  }
                 />
+                {config.provider === "openclaw" && <span className="field-help">{OPENCLAW_GATEWAY_TOKEN_HELP}</span>}
               </label>
             )}
             {config.provider === "openclaw" && (
@@ -314,6 +326,7 @@ export function OnboardingModal({
                 Inject Liteforms persona
               </label>
             )}
+            {config.provider === "openclaw" && <OpenClawSetupHint />}
           </fieldset>
           <div className="onboarding-footer">
             <button
