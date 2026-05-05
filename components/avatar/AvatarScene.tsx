@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AmbientLight,
+  Box3,
   Clock,
   Color,
   DirectionalLight,
@@ -37,7 +38,11 @@ import {
   configureLightShadow,
   setMeshShadowFlags,
 } from "@/lib/avatar/shadowSetup";
-import { computeModelFraming } from "@/lib/avatar/modelFraming";
+import {
+  computeModelFraming,
+  computeModelFramingMatchHeight,
+  computeModelSceneHeight,
+} from "@/lib/avatar/modelFraming";
 import { repairMorphTargetDictionaries } from "@/lib/avatar/vrmMorphTargetRepair";
 import type { GltfMeshDef } from "@/lib/avatar/vrmMorphTargetRepair";
 
@@ -55,6 +60,34 @@ const LOOKING_GLASS_FOCAL_TARGET = new Vector3(0.003, 0.877, 0.234);
 // Singleton guard: the LKG polyfill overrides navigator.xr globally and must
 // only be constructed once per page lifetime.
 let lkgInitialized = false;
+
+// Cached promise for the lobster model's framed scene height (Y-axis, scene units).
+// Populated the first time it is needed; reused across all subsequent model loads.
+let _lobsterSceneHeightPromise: Promise<number> | null = null;
+
+function ensureLobsterSceneHeight(): Promise<number> {
+  if (_lobsterSceneHeightPromise) return _lobsterSceneHeightPromise;
+  _lobsterSceneHeightPromise = new Promise<number>((resolve) => {
+    const refLoader = new GLTFLoader();
+    refLoader.register((parser) => new VRMLoaderPlugin(parser));
+    refLoader.load(
+      DEFAULT_MODEL_URL,
+      (gltf) => {
+        const vrm = gltf.userData.vrm as VRM | undefined;
+        if (!vrm) {
+          resolve(1.0);
+          return;
+        }
+        VRMUtils.rotateVRM0(vrm);
+        const bounds = new Box3().setFromObject(vrm.scene);
+        resolve(computeModelSceneHeight(bounds.getSize(new Vector3()), 1.8));
+      },
+      undefined,
+      () => resolve(1.0)
+    );
+  });
+  return _lobsterSceneHeightPromise;
+}
 
 type AvatarDebugWindow = Window & {
   setHologramTarget?: (x: number, y: number, z: number) => void;
@@ -342,14 +375,27 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       resize();
       window.addEventListener("resize", resize);
 
-      // Default lobster uses 1.8 units max-axis so it fills the frame nicely.
-      // Imported humanoid VRMs are typically taller than they are wide, so 1.8
-      // units makes them appear too large for the camera position; 1.2 gives a
-      // comfortable portrait-framing that roughly matches the lobster's visual size.
-      const frameTargetMaxAxis = modelUrl === DEFAULT_MODEL_URL ? 1.8 : 1.2;
+      // Start resolving the lobster reference height as early as possible so it
+      // is likely ready by the time the imported VRM finishes loading.
+      const referenceHeightPromise =
+        modelUrl !== DEFAULT_MODEL_URL ? ensureLobsterSceneHeight() : null;
 
-      const frameModel = (object: Object3D) => {
-        const framing = computeModelFraming(object, frameTargetMaxAxis);
+      const frameModel = async (object: Object3D) => {
+        let framing;
+        if (referenceHeightPromise !== null) {
+          const referenceHeight = await referenceHeightPromise;
+          framing = computeModelFramingMatchHeight(object, referenceHeight);
+        } else {
+          framing = computeModelFraming(object, 1.8);
+          // Cache the lobster height now that we have it, so subsequent
+          // imported VRM loads skip the background fetch entirely.
+          _lobsterSceneHeightPromise ??= Promise.resolve(
+            computeModelSceneHeight(
+              new Box3().setFromObject(object).getSize(new Vector3()),
+              1.8
+            )
+          );
+        }
         object.scale.setScalar(framing.scale);
         object.position.copy(framing.position);
         controls!.target.copy(framing.cameraTarget);
@@ -372,7 +418,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
 
       loader.load(
         modelUrl,
-        (gltf) => {
+        async (gltf) => {
           if (disposed) return;
 
           const loadedVrm = gltf.userData.vrm as VRM | undefined;
@@ -396,7 +442,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           setMeshShadowFlags(loadedVrm.scene, true, false);
           runtimeAnimator?.dispose();
           runtimeAnimator = new VrmRuntimeAnimator(loadedVrm);
-          frameModel(loadedVrm.scene);
+          await frameModel(loadedVrm.scene);
+          if (disposed) return;
 
           // Update the holographic focal plane so the lobster is centred on
           // the convergence point. LookingGlassConfig is the exported singleton;
