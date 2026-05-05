@@ -12,10 +12,17 @@ function cssRule(selector: string) {
 describe("global CSS", () => {
   it("keeps the OpenClaw setup command on one horizontally-scrollable line", () => {
     const rule = cssRule(".openclaw-command-row code");
+    const scrollbarRule = cssRule(".openclaw-command-row code::-webkit-scrollbar");
 
     expect(rule).toContain("overflow-x: auto");
     expect(rule).toContain("white-space: nowrap");
+    expect(rule).toContain("align-content: center");
+    expect(rule).toContain("min-height: 36px");
+    expect(rule).toContain("padding: 6px 8px");
+    expect(rule).toContain("scrollbar-width: none");
+    expect(rule).toContain("-ms-overflow-style: none");
     expect(rule).not.toContain("overflow-wrap: anywhere");
+    expect(scrollbarRule).toContain("display: none");
   });
 
   it("stacks onboarding above the Looking Glass button", () => {

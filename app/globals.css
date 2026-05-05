@@ -338,7 +338,7 @@ button:disabled {
 }
 
 .openclaw-command-row code {
-  align-items: center;
+  align-content: center;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -347,10 +347,17 @@ button:disabled {
   font-family: 'Space Mono', monospace;
   font-size: 11px;
   line-height: 1.45;
+  min-height: 36px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 8px;
+  padding: 6px 8px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   white-space: nowrap;
+}
+
+.openclaw-command-row code::-webkit-scrollbar {
+  display: none;
 }
 
 .openclaw-command-row button {
@@ -384,6 +391,26 @@ button:disabled {
   font-size: 12px;
   font-weight: 500;
   gap: 5px;
+}
+
+.settings-readout {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-readout span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.settings-readout strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .field-help {

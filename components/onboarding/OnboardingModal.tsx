@@ -316,16 +316,6 @@ export function OnboardingModal({
                 {config.provider === "openclaw" && <span className="field-help">{OPENCLAW_GATEWAY_TOKEN_HELP}</span>}
               </label>
             )}
-            {config.provider === "openclaw" && (
-              <label className="inline-toggle">
-                <input
-                  type="checkbox"
-                  checked={config.injectLiteformsPersona === true}
-                  onChange={(e) => setConfig({ ...config, injectLiteformsPersona: e.target.checked })}
-                />
-                Inject Liteforms persona
-              </label>
-            )}
             {config.provider === "openclaw" && <OpenClawSetupHint />}
           </fieldset>
           <div className="onboarding-footer">

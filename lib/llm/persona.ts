@@ -3,12 +3,11 @@ import type { CharacterPersona, ChatMessage, LlmProviderId } from "./types";
 type BuildChatMessagesInput = {
   provider: LlmProviderId;
   persona?: CharacterPersona;
-  injectLiteformsPersona?: boolean;
   messages: ChatMessage[];
 };
 
 export function buildChatMessages(input: BuildChatMessagesInput): ChatMessage[] {
-  if (!input.persona || (input.provider === "openclaw" && !input.injectLiteformsPersona)) {
+  if (!input.persona || input.provider === "openclaw") {
     return input.messages;
   }
 

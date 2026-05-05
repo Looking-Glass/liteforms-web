@@ -73,8 +73,7 @@ export const providerConfigSchema = z
     model: z.string().trim().min(1),
     credential: z.string().optional(),
     baseUrl: z.string().trim().optional(),
-    endpointMode: z.enum(["native", "openai-compatible"]).optional(),
-    injectLiteformsPersona: z.boolean().optional()
+    endpointMode: z.enum(["native", "openai-compatible"]).optional()
   })
   .transform((config) => ({
     ...config,

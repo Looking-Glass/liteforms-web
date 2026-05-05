@@ -338,8 +338,18 @@ describe("OnboardingModal LLM step", () => {
       target: { value: "openclaw" }
     });
 
-    expect(screen.getByLabelText("OpenClaw gateway token")).toBeInTheDocument();
-    expect(screen.getByText(/required when OpenClaw gateway auth mode is token/i)).toBeInTheDocument();
+    expect(screen.getByLabelText("OpenClaw Gateway token")).toBeInTheDocument();
+    expect(screen.getByText(/required when OpenClaw Gateway auth is enabled/i)).toBeInTheDocument();
+  });
+
+  it("does not show a Liteforms persona injection option for OpenClaw", () => {
+    renderModal();
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "openclaw" }
+    });
+
+    expect(screen.queryByLabelText(/inject liteforms persona/i)).not.toBeInTheDocument();
   });
 
   it("hides endpoint field for browser-local-gemma", () => {

@@ -73,7 +73,6 @@ async function* streamOpenAiCompatible(request: ChatRequest, fetchImpl: FetchLik
   const messages = buildChatMessages({
     provider: config.provider,
     persona: request.persona,
-    injectLiteformsPersona: config.injectLiteformsPersona,
     messages: request.messages
   });
   const headers: Record<string, string> = { "Content-Type": "application/json" };

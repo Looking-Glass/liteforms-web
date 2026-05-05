@@ -570,7 +570,7 @@ interface BrowserLlmProvider {
   - agent target, default `openclaw/default`
 - Use `POST /v1/chat/completions` with standard OpenAI-compatible streaming while keeping OpenClaw as a first-class Liteforms provider in the UI.
 - Must be able to target OpenClaw's OpenAI, OpenAI-Codex, OpenRouter, Ollama, LM Studio, and Anthropic-backed models through the gateway when exposed by that gateway.
-- When a character is configured to use OpenClaw, do not build or inject the default AI-Avatar persona system prompt unless the user explicitly enables Liteforms persona injection. OpenClaw agents may already carry personality and instructions.
+- When a character is configured to use OpenClaw, do not build or inject the default AI-Avatar persona system prompt. OpenClaw agents already carry personality and instructions.
 
 `codex/chatgpt-subscription`
 
@@ -605,7 +605,7 @@ interface BrowserLlmProvider {
 1. User sends text.
 2. App builds a provider-appropriate request:
    - For ordinary Liteforms characters, include the AI-Avatar persona pattern: character description, name, and pronouns.
-   - For OpenClaw-configured characters, preserve the connected OpenClaw's existing personality by default and only add Liteforms persona text when explicitly enabled.
+   - For OpenClaw-configured characters, preserve the connected OpenClaw's existing personality and do not add Liteforms persona text.
 3. App parses user-input action hooks.
 4. App streams response from selected LLM provider.
 5. Text appears incrementally in chat.

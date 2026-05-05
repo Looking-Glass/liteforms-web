@@ -38,7 +38,6 @@ export type BaseProviderConfig = {
   credential?: string;
   baseUrl?: string;
   endpointMode?: "native" | "openai-compatible";
-  injectLiteformsPersona?: boolean;
 };
 
 export type ChatRequest = {

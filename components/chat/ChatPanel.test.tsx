@@ -5,7 +5,6 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import { ChatPanel, _clearPreloadSessionsForTesting } from "./ChatPanel";
 import type { CharacterConfig } from "./ChatPanel";
 import { createLlmAdapter } from "@/lib/llm";
-import { OPENCLAW_ENABLE_CHAT_COMPLETIONS_COMMAND } from "@/lib/llm/openclawSetup";
 import { createAsrAdapter, createTtsAdapter } from "@/lib/speech";
 
 afterEach(cleanup);
@@ -74,6 +73,20 @@ function renderPanel(overrides: Partial<CharacterConfig> = {}) {
   return { onCharacterChange, onModelUrlChange };
 }
 
+function renderPanelWithConfig(options: Partial<React.ComponentProps<typeof ChatPanel>> = {}) {
+  const onCharacterChange = vi.fn();
+  const onModelUrlChange = vi.fn();
+  render(
+    <ChatPanel
+      character={defaultCharacter}
+      onCharacterChange={onCharacterChange}
+      onModelUrlChange={onModelUrlChange}
+      {...options}
+    />
+  );
+  return { onCharacterChange, onModelUrlChange };
+}
+
 // ── Collapsible sections ─────────────────────────────────────────────────────
 
 describe("ChatPanel collapsible sections", () => {
@@ -87,9 +100,9 @@ describe("ChatPanel collapsible sections", () => {
     renderPanel();
     // Character section is open by default
     expect(screen.getByPlaceholderText("Character name")).toBeInTheDocument();
-    // Settings fields are accessible in the DOM even when section is collapsed
-    expect(screen.getByLabelText("Model provider")).toBeInTheDocument();
-    expect(screen.getByLabelText("Voice provider")).toBeInTheDocument();
+    // Settings readouts are accessible in the DOM even when section is collapsed
+    expect(screen.getByRole("group", { name: "Model provider" })).toHaveTextContent("Browser local (Gemma)");
+    expect(screen.getByRole("group", { name: "Voice provider" })).toHaveTextContent("Kokoro local");
   });
 });
 
@@ -211,57 +224,70 @@ describe("ChatPanel VRM loader", () => {
 // ── OpenClaw persona handling ────────────────────────────────────────────────
 
 describe("ChatPanel OpenClaw persona handling", () => {
-  it("hides character identity fields when OpenClaw provider is selected", () => {
-    renderPanel();
-    const providerSelect = screen.getByLabelText("Model provider") as HTMLSelectElement;
-    fireEvent.change(providerSelect, { target: { value: "openclaw" } });
+  it("hides character identity fields when OpenClaw provider is active", () => {
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "openclaw",
+        model: "openclaw",
+        baseUrl: "http://127.0.0.1:18789/v1",
+        endpointMode: "openai-compatible"
+      }
+    });
     expect(screen.queryByPlaceholderText("Character name")).not.toBeInTheDocument();
     expect(screen.queryByPlaceholderText(/personality/i)).not.toBeInTheDocument();
   });
 
   it("shows OpenClaw soul system note when OpenClaw is active", () => {
-    renderPanel();
-    const providerSelect = screen.getByLabelText("Model provider") as HTMLSelectElement;
-    fireEvent.change(providerSelect, { target: { value: "openclaw" } });
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "openclaw",
+        model: "openclaw",
+        baseUrl: "http://127.0.0.1:18789/v1",
+        endpointMode: "openai-compatible"
+      }
+    });
     expect(screen.getByText(/OpenClaw.*soul system/i)).toBeInTheDocument();
   });
 
-  it("restores character fields when switching away from OpenClaw", () => {
-    renderPanel();
-    const providerSelect = screen.getByLabelText("Model provider") as HTMLSelectElement;
-    fireEvent.change(providerSelect, { target: { value: "openclaw" } });
-    fireEvent.change(providerSelect, { target: { value: "openai" } });
+  it("shows character fields when a non-OpenClaw provider is active", () => {
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "openai",
+        model: "gpt-5.5",
+        baseUrl: "https://api.openai.com/v1",
+        endpointMode: "openai-compatible"
+      }
+    });
     expect(screen.getByPlaceholderText("Character name")).toBeInTheDocument();
   });
 
-  it("shows and copies the OpenClaw chat completions setup command", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: { writeText }
+  it("hides OpenClaw token and setup command in chat settings", () => {
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "openclaw",
+        model: "openclaw",
+        credential: "gateway-token",
+        baseUrl: "http://127.0.0.1:18789/v1",
+        endpointMode: "openai-compatible"
+      }
     });
 
-    renderPanel();
-    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "openclaw" } });
-
-    expect(screen.getByText(OPENCLAW_ENABLE_CHAT_COMPLETIONS_COMMAND)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /copy openclaw setup command/i }));
-
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith(OPENCLAW_ENABLE_CHAT_COMPLETIONS_COMMAND));
+    expect(screen.getByRole("group", { name: "Model provider" })).toHaveTextContent("OpenClaw Gateway");
+    expect(screen.queryByLabelText("OpenClaw Gateway token")).not.toBeInTheDocument();
+    expect(screen.queryByText(/OpenClaw setup/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /copy openclaw setup command/i })).not.toBeInTheDocument();
   });
 
-  it("shows the OpenClaw gateway token field in chat settings", () => {
-    renderPanel();
-    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "openclaw" } });
-
-    expect(screen.getByLabelText("OpenClaw gateway token")).toBeInTheDocument();
-    expect(screen.getByText(/required when OpenClaw gateway auth mode is token/i)).toBeInTheDocument();
-  });
-
-  it("sends the OpenClaw gateway token as the active LLM credential", async () => {
-    renderPanel();
-    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "openclaw" } });
-    fireEvent.change(screen.getByLabelText("OpenClaw gateway token"), { target: { value: "gateway-token" } });
+  it("sends the configured OpenClaw gateway token as the active LLM credential", async () => {
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "openclaw",
+        model: "openclaw",
+        credential: "gateway-token",
+        baseUrl: "http://127.0.0.1:18789/v1",
+        endpointMode: "openai-compatible"
+      }
+    });
     fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -418,128 +444,35 @@ describe("mic auto-submit flow", () => {
 
 // ── Settings model dropdown ───────────────────────────────────────────────────
 
-describe("ChatPanel Settings model dropdown", () => {
-  function selectProvider(providerId: string) {
-    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: providerId } });
-  }
-
-  // ── New providers appear ────────────────────────────────────────────────
-
-  it("provider dropdown includes Google AI Studio", () => {
-    renderPanel();
-    selectProvider("google");
-    expect(screen.getByLabelText("Model provider")).toHaveValue("google");
-  });
-
-  it("provider dropdown includes xAI (Grok)", () => {
-    renderPanel();
-    selectProvider("xai");
-    expect(screen.getByLabelText("Model provider")).toHaveValue("xai");
-  });
-
-  it("provider dropdown includes Mistral AI", () => {
-    renderPanel();
-    selectProvider("mistral");
-    expect(screen.getByLabelText("Model provider")).toHaveValue("mistral");
-  });
-
-  it("provider dropdown includes Groq", () => {
-    renderPanel();
-    selectProvider("groq");
-    expect(screen.getByLabelText("Model provider")).toHaveValue("groq");
-  });
-
-  it("provider dropdown includes Together AI", () => {
-    renderPanel();
-    selectProvider("together");
-    expect(screen.getByLabelText("Model provider")).toHaveValue("together");
-  });
-
-  // ── Model control hidden for browser-local-gemma ──────────────────────────
-
-  it("hides model dropdown/input for browser-local-gemma (only one model)", () => {
-    renderPanel();
-    // Default provider is browser-local-gemma — no model control should be shown
-    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
-  });
-
-  it("shows model control again after switching away from browser-local-gemma", () => {
-    renderPanel();
-    selectProvider("anthropic");
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
-  });
-
-  // ── Model control in Advanced (matches onboarding: dropdown when provider has a static list) ─
-
-  it("shows a free-text model input for Ollama (dynamic models)", () => {
-    renderPanel();
-    selectProvider("ollama");
-    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
-  });
-
-  it("shows a free-text model input for OpenRouter (dynamic gateway)", () => {
-    renderPanel();
-    selectProvider("openrouter");
-    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
-  });
-
-  it("shows a free-text model input for Groq", () => {
-    renderPanel();
-    selectProvider("groq");
-    expect(screen.getByRole("textbox", { name: "Model" })).toBeInTheDocument();
-  });
-
-  it("shows a model dropdown for Anthropic (provider with known models)", () => {
-    renderPanel();
-    selectProvider("anthropic");
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
-  });
-
-  it("shows a model dropdown for OpenAI", () => {
-    renderPanel();
-    selectProvider("openai");
-    expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
-  });
-
-  // ── Default models (Advanced section) ─────────────────────────────────────
-
-  it("OpenAI defaults to gpt-5.5", () => {
-    renderPanel();
-    selectProvider("openai");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.5");
-  });
-
-  it("Anthropic defaults to claude-opus-4-7", () => {
-    renderPanel();
-    selectProvider("anthropic");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("claude-opus-4-7");
-  });
-
-  it("Google defaults to gemini-3.1-pro-preview", () => {
-    renderPanel();
-    selectProvider("google");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gemini-3.1-pro-preview");
-  });
-
-  it("xAI defaults to grok-4", () => {
-    renderPanel();
-    selectProvider("xai");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("grok-4");
-  });
-
-  // ── Config integration ──────────────────────────────────────────────────
-
-  it("editing the model selection updates the active model", async () => {
-    renderPanel();
-    selectProvider("anthropic");
-    fireEvent.change(screen.getByRole("combobox", { name: "Model" }), {
-      target: { value: "claude-sonnet-4-5" }
+describe("ChatPanel Settings readouts", () => {
+  it("shows provider and model values without editable Settings controls", () => {
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        baseUrl: "https://api.anthropic.com",
+        endpointMode: "native"
+      }
     });
-    const input = screen.getByPlaceholderText("Type a message…");
-    fireEvent.change(input, { target: { value: "hello" } });
+
+    expect(screen.getByRole("group", { name: "Model provider" })).toHaveTextContent("Anthropic API");
+    expect(screen.getByRole("group", { name: "Model" })).toHaveTextContent("claude-sonnet-4-5");
+    expect(screen.queryByRole("combobox", { name: "Model provider" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
+  it("keeps Settings read-only and uses the configured model for chat", async () => {
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        baseUrl: "https://api.anthropic.com",
+        endpointMode: "native"
+      }
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hello" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => {
       expect(vi.mocked(createLlmAdapter)).toHaveBeenCalledWith(
@@ -550,52 +483,38 @@ describe("ChatPanel Settings model dropdown", () => {
     });
   });
 });
+// Settings TTS/STT readouts
 
-// ── Settings TTS/STT dropdowns ────────────────────────────────────────────────
+describe("ChatPanel Settings TTS readout", () => {
+  it("shows the active Voice provider without an editable dropdown", () => {
+    renderPanelWithConfig({
+      initialTtsConfig: {
+        provider: "elevenlabs",
+        voiceId: "Rachel",
+        modelId: "eleven_multilingual_v2",
+        credential: "tts-key"
+      }
+    });
 
-describe("ChatPanel Settings TTS dropdown", () => {
-  function selectTtsProvider(id: string) {
-    fireEvent.change(screen.getByLabelText("Voice provider"), { target: { value: id } });
-  }
-
-  it("Voice provider dropdown includes OpenAI TTS", () => {
-    renderPanel();
-    selectTtsProvider("openai");
-    expect(screen.getByLabelText("Voice provider")).toHaveValue("openai");
+    expect(screen.getByRole("group", { name: "Voice provider" })).toHaveTextContent("ElevenLabs");
+    expect(screen.queryByRole("combobox", { name: "Voice provider" })).not.toBeInTheDocument();
   });
 
-  it("Voice provider dropdown includes Google TTS", () => {
-    renderPanel();
-    selectTtsProvider("google");
-    expect(screen.getByLabelText("Voice provider")).toHaveValue("google");
-  });
+  it("hides TTS credential fields in Settings", () => {
+    renderPanelWithConfig({
+      initialTtsConfig: {
+        provider: "elevenlabs",
+        voiceId: "Rachel",
+        modelId: "eleven_multilingual_v2",
+        credential: "tts-key"
+      }
+    });
 
-  it("Voice provider dropdown includes xAI TTS", () => {
-    renderPanel();
-    selectTtsProvider("xai");
-    expect(screen.getByLabelText("Voice provider")).toHaveValue("xai");
-  });
-
-  it("Voice provider dropdown includes MiniMax", () => {
-    renderPanel();
-    selectTtsProvider("minimax");
-    expect(screen.getByLabelText("Voice provider")).toHaveValue("minimax");
-  });
-
-  it("non-Kokoro TTS provider shows Voice credential field", () => {
-    renderPanel();
-    selectTtsProvider("elevenlabs");
-    expect(screen.getByLabelText("Voice credential")).toBeInTheDocument();
-  });
-
-  it("Kokoro TTS does not show Voice credential field", () => {
-    renderPanel();
-    // Kokoro is the default
     expect(screen.queryByLabelText("Voice credential")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("API key")).not.toBeInTheDocument();
   });
 });
-
-// ── Streaming TTS pipeline ───────────────────────────────────────────────────
+// Streaming TTS pipeline
 
 describe("ChatPanel streaming TTS pipeline", () => {
   beforeEach(() => {
@@ -695,31 +614,34 @@ describe("ChatPanel streaming TTS pipeline", () => {
   });
 });
 
-describe("ChatPanel speech input provider dropdown", () => {
-  function selectSpeechInputProvider(id: string) {
-    fireEvent.change(screen.getByLabelText("Speech input provider"), { target: { value: id } });
-  }
+describe("ChatPanel speech input provider readout", () => {
+  it("shows the active Speech input provider without an editable dropdown", () => {
+    renderPanelWithConfig({
+      initialAsrConfig: {
+        provider: "deepgram",
+        credential: "stt-key",
+        model: "nova-3"
+      }
+    });
 
-  it("Speech input dropdown includes Deepgram", () => {
-    renderPanel();
-    selectSpeechInputProvider("deepgram");
-    expect(screen.getByLabelText("Speech input provider")).toHaveValue("deepgram");
+    expect(screen.getByRole("group", { name: "Speech input provider" })).toHaveTextContent("Deepgram");
+    expect(screen.queryByRole("combobox", { name: "Speech input provider" })).not.toBeInTheDocument();
   });
 
-  it("Speech input dropdown includes ElevenLabs STT", () => {
-    renderPanel();
-    selectSpeechInputProvider("elevenlabs");
-    expect(screen.getByLabelText("Speech input provider")).toHaveValue("elevenlabs");
-  });
+  it("hides STT credential fields in Settings", () => {
+    renderPanelWithConfig({
+      initialAsrConfig: {
+        provider: "deepgram",
+        credential: "stt-key",
+        model: "nova-3"
+      }
+    });
 
-  it("Deepgram speech input shows Transcription credential field", () => {
-    renderPanel();
-    selectSpeechInputProvider("deepgram");
-    expect(screen.getByLabelText("Transcription credential")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Transcription credential")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("API key")).not.toBeInTheDocument();
   });
 });
-
-// ── Local model preloading ────────────────────────────────────────────────────
+// Local model preloading
 
 describe("ChatPanel local model preloading", () => {
   beforeEach(() => {
@@ -794,25 +716,30 @@ describe("ChatPanel local model preloading", () => {
 // ── Qwen 3.5 local provider ───────────────────────────────────────────────────
 
 describe("ChatPanel Qwen 3.5 local provider", () => {
-  function selectProvider(providerId: string) {
-    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: providerId } });
-  }
-
-  it("browser-local-qwen appears in the provider dropdown", () => {
-    renderPanel();
-    selectProvider("browser-local-qwen");
-    expect(screen.getByLabelText("Model provider")).toHaveValue("browser-local-qwen");
+  it("browser-local-qwen appears in the provider readout when configured", () => {
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "browser-local-qwen",
+        model: "onnx-community/Qwen3.5-0.8B-ONNX",
+        endpointMode: "native"
+      }
+    });
+    expect(screen.getByRole("group", { name: "Model provider" })).toHaveTextContent("Browser local (Qwen)");
   });
 
-  it("hides Model control for browser-local-qwen (single local model)", () => {
-    renderPanel();
-    selectProvider("browser-local-qwen");
+  it("does not render editable Model controls for browser-local-qwen", () => {
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "browser-local-qwen",
+        model: "onnx-community/Qwen3.5-0.8B-ONNX",
+        endpointMode: "native"
+      }
+    });
     expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
   });
 });
-
-// ── Active-only local model display ──────────────────────────────────────────
+// Active-only local model display
 
 describe("ChatPanel advanced panel shows only selected local models", () => {
   it("shows only 3 models (gemma+kokoro+distil-whisper) by default (browser-local-gemma provider)", async () => {
@@ -829,15 +756,25 @@ describe("ChatPanel advanced panel shows only selected local models", () => {
   });
 
   it("shows qwen-local row when provider is browser-local-qwen", async () => {
-    renderPanel();
-    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "browser-local-qwen" } });
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "browser-local-qwen",
+        model: "onnx-community/Qwen3.5-0.8B-ONNX",
+        endpointMode: "native"
+      }
+    });
     await new Promise<void>((r) => setTimeout(r, 0));
     expect(screen.getByText("Qwen 3.5 0.8B")).toBeInTheDocument();
   });
 
   it("hides gemma row when provider is browser-local-qwen", async () => {
-    renderPanel();
-    fireEvent.change(screen.getByLabelText("Model provider"), { target: { value: "browser-local-qwen" } });
+    renderPanelWithConfig({
+      initialLlmConfig: {
+        provider: "browser-local-qwen",
+        model: "onnx-community/Qwen3.5-0.8B-ONNX",
+        endpointMode: "native"
+      }
+    });
     await new Promise<void>((r) => setTimeout(r, 0));
     expect(screen.queryByText("Gemma 4 E2B q8")).not.toBeInTheDocument();
   });

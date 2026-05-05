@@ -20,22 +20,13 @@ describe("LLM persona prompt", () => {
     expect(messages[0]?.content).toContain("Precise and curious.");
   });
 
-  it("does not overwrite OpenClaw personality unless explicitly enabled", () => {
-    expect(
-      buildChatMessages({
-        provider: "openclaw",
-        persona,
-        messages: [{ role: "user", content: "Hello" }]
-      })
-    ).toEqual([{ role: "user", content: "Hello" }]);
+  it("never injects Liteforms persona for OpenClaw", () => {
+    const messages = buildChatMessages({
+      provider: "openclaw",
+      persona,
+      messages: [{ role: "user", content: "Hello" }]
+    });
 
-    expect(
-      buildChatMessages({
-        provider: "openclaw",
-        persona,
-        injectLiteformsPersona: true,
-        messages: [{ role: "user", content: "Hello" }]
-      })[0]?.role
-    ).toBe("system");
+    expect(messages).toEqual([{ role: "user", content: "Hello" }]);
   });
 });

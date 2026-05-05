@@ -2,17 +2,9 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createLlmAdapter, getDefaultProviderConfig, getProviderLabel, normalizeProviderConfig } from "@/lib/llm";
-import { OpenClawSetupHint } from "@/components/openclaw/OpenClawSetupHint";
-import {
-  OPENCLAW_GATEWAY_TOKEN_HELP,
-  OPENCLAW_GATEWAY_TOKEN_LABEL,
-  OPENCLAW_GATEWAY_TOKEN_PLACEHOLDER
-} from "@/lib/llm/openclawSetup";
 import { sanitizeAssistantText } from "@/lib/llm/output";
 import { LocalGemmaWorkerClient } from "@/lib/llm/localGemmaWorker";
 import type { BaseProviderConfig, ChatMessage, LlmProviderId } from "@/lib/llm";
-import { LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
-import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import {
   createAsrAdapter,
   createTtsAdapter,
@@ -25,7 +17,7 @@ import {
   rewriteDecimalsForTts,
   getSafeTextForTts
 } from "@/lib/speech";
-import type { TtsResult, TtsProviderId, AsrProviderId } from "@/lib/speech";
+import type { TtsResult } from "@/lib/speech";
 import { DistilWhisperWorkerClient, KokoroWorkerClient } from "@/lib/speech/workerClient";
 import type { AsrConfig, TtsConfig } from "@/lib/speech";
 import { dispatchAvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
@@ -36,7 +28,6 @@ import {
   formatCacheUsage,
   isModelCacheName,
   normalizeHuggingfaceProgress,
-  updateEndpointMode
 } from "./chatPanelUtils";
 import type { CacheUsage } from "./chatPanelUtils";
 
@@ -94,6 +85,15 @@ export const initialLocalModelLoadState: LocalModelLoadState[] = [
 /** Returns true for provider IDs that run entirely in the browser with no endpoint/credential. */
 function isBrowserLocalProvider(provider: LlmProviderId): boolean {
   return provider === "browser-local-gemma" || provider === "browser-local-qwen";
+}
+
+function SettingsReadout({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="settings-readout" role="group" aria-label={label}>
+      <span>{label}</span>
+      <strong>{value || "Not set"}</strong>
+    </div>
+  );
 }
 
 // Module-level guard for preload start. Survives across all ChatPanel instances
@@ -166,11 +166,6 @@ export function ChatPanel({
   // slow connections where Transformers.js fires many small-chunk events.
   const pendingProgressRef = useRef<Map<LocalModelId, Partial<LocalModelLoadState>>>(new Map());
   const progressFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const providerMeta = useMemo(
-    () => LLM_PROVIDER_OPTIONS.find((provider) => provider.id === config.provider) ?? LLM_PROVIDER_OPTIONS[0],
-    [config.provider]
-  );
 
   /** IDs of local models that are currently wanted based on configured providers. */
   const activeLocalModelIds = useMemo<Set<LocalModelId>>(() => {
@@ -684,52 +679,6 @@ export function ChatPanel({
     }
   }
 
-  const ttsMeta = TTS_PROVIDER_OPTIONS.find((p) => p.id === ttsConfig.provider) ?? TTS_PROVIDER_OPTIONS[0];
-  const sttMeta = STT_PROVIDER_OPTIONS.find((p) => p.id === asrConfig.provider) ?? STT_PROVIDER_OPTIONS[0];
-
-  function updateLlmProvider(providerId: LlmProviderId) {
-    const option = LLM_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? LLM_PROVIDER_OPTIONS[0];
-    setConfig({
-      provider: option.id,
-      model: option.defaultModel,
-      baseUrl: option.defaultBaseUrl,
-      endpointMode: updateEndpointMode(option.id)
-    });
-  }
-
-  function updateTtsProvider(providerId: TtsProviderId) {
-    const opt = TTS_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? TTS_PROVIDER_OPTIONS[0];
-    if (providerId === "kokoro") {
-      setTtsConfig({ provider: "kokoro" });
-    } else if (providerId === "elevenlabs") {
-      setTtsConfig({ provider: "elevenlabs", voiceId: opt.defaultVoice ?? "Rachel", modelId: opt.defaultModel });
-    } else {
-      setTtsConfig({
-        provider: providerId as Exclude<TtsProviderId, "kokoro" | "elevenlabs">,
-        voice: opt.defaultVoice,
-        model: opt.defaultModel,
-        baseUrl: opt.defaultBaseUrl
-      } as TtsConfig);
-    }
-  }
-
-  function updateAsrProvider(providerId: AsrProviderId) {
-    const opt = STT_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? STT_PROVIDER_OPTIONS[0];
-    if (providerId === "distil-whisper") {
-      setAsrConfig({ provider: "distil-whisper" });
-    } else if (providerId === "elevenlabs") {
-      const sharedCredential =
-        ttsConfig.provider === "elevenlabs" && "credential" in ttsConfig ? ttsConfig.credential : undefined;
-      setAsrConfig({ provider: "elevenlabs", credential: sharedCredential, model: opt.defaultModel });
-    } else {
-      setAsrConfig({
-        provider: providerId as Exclude<AsrProviderId, "distil-whisper" | "elevenlabs">,
-        model: opt.defaultModel,
-        baseUrl: opt.defaultBaseUrl
-      } as AsrConfig);
-    }
-  }
-
   function handleVrmLoad(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -826,91 +775,12 @@ export function ChatPanel({
         <div className="panel-section-body">
 
           <div className="model-settings">
-            <label>
-              Model provider
-              <select
-                value={config.provider}
-                onChange={(e) => updateLlmProvider(e.target.value as LlmProviderId)}
-              >
-                {LLM_PROVIDER_OPTIONS.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
-            </label>
-            {!isBrowserLocalProvider(config.provider) && (
-              <label>
-                Model
-                {providerMeta.models ? (
-                  <select value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })}>
-                    {providerMeta.models.map((m) => (
-                      <option key={m.id} value={m.id}>{m.label}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })} />
-                )}
-              </label>
-            )}
-            {isOpenClaw && (
-              <label>
-                {OPENCLAW_GATEWAY_TOKEN_LABEL}
-                <input
-                  aria-label={OPENCLAW_GATEWAY_TOKEN_LABEL}
-                  type="password"
-                  value={config.credential ?? ""}
-                  onChange={(e) => setConfig({ ...config, credential: e.target.value })}
-                  placeholder={OPENCLAW_GATEWAY_TOKEN_PLACEHOLDER}
-                />
-                <span className="field-help">{OPENCLAW_GATEWAY_TOKEN_HELP}</span>
-              </label>
-            )}
-            {isOpenClaw && <OpenClawSetupHint />}
+            <SettingsReadout label="Model provider" value={getProviderLabel(config.provider)} />
+            <SettingsReadout label="Model" value={config.model} />
           </div>
           <div className="speech-settings">
-            <label>
-              Voice provider
-              <select
-                value={ttsConfig.provider}
-                onChange={(e) => updateTtsProvider(e.target.value as TtsProviderId)}
-              >
-                {TTS_PROVIDER_OPTIONS.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
-            </label>
-            {ttsMeta.needsCredential && (
-              <label>
-                Voice credential
-                <input
-                  type="password"
-                  value={"credential" in ttsConfig ? (ttsConfig.credential ?? "") : ""}
-                  onChange={(e) => setTtsConfig({ ...ttsConfig, credential: e.target.value } as TtsConfig)}
-                  placeholder="API key"
-                />
-              </label>
-            )}
-            <label>
-              Speech input provider
-              <select
-                value={asrConfig.provider}
-                onChange={(e) => updateAsrProvider(e.target.value as AsrProviderId)}
-              >
-                {STT_PROVIDER_OPTIONS.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
-                ))}
-              </select>
-            </label>
-            {sttMeta.needsCredential && (
-              <label>
-                Transcription credential
-                <input
-                  type="password"
-                  value={"credential" in asrConfig ? (asrConfig.credential ?? "") : ""}
-                  onChange={(e) => setAsrConfig({ ...asrConfig, credential: e.target.value } as AsrConfig)}
-                  placeholder="API key"
-                />
-              </label>
-            )}
+            <SettingsReadout label="Voice provider" value={getTtsProviderLabel(ttsConfig.provider)} />
+            <SettingsReadout label="Speech input provider" value={getAsrProviderLabel(asrConfig.provider)} />
           </div>
 
           <button
