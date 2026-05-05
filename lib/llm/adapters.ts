@@ -13,13 +13,13 @@ type CreateAdapterInput = {
 /** Cloud providers whose APIs block direct browser requests due to CORS. */
 const CLOUD_PROVIDER_IDS = new Set<string>([
   "openai", "anthropic", "google", "xai", "mistral",
-  "cerebras", "nvidia", "openrouter", "groq", "together", "fireworks", "qwen", "openclaw"
+  "cerebras", "nvidia", "openrouter", "groq", "together", "fireworks", "qwen"
 ]);
 
 export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
   const config = normalizeProviderConfig(input.config);
   const fetchImpl = input.fetch ?? fetch;
-  // When no custom fetch is injected, assume browser context: route cloud providers through proxy
+  // When no custom fetch is injected, assume browser context.
   const useProxy = !input.fetch;
 
   return {
@@ -27,7 +27,7 @@ export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
     streamText(request) {
       const normalizedRequest = { ...request, config: normalizeProviderConfig(request.config) };
 
-      if (useProxy && CLOUD_PROVIDER_IDS.has(normalizedRequest.config.provider)) {
+      if (useProxy && shouldProxyBrowserRequest(normalizedRequest.config.provider)) {
         return streamViaProxy(normalizedRequest, fetchImpl);
       }
 
@@ -46,6 +46,18 @@ export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
       return streamOpenAiCompatible(normalizedRequest, fetchImpl);
     }
   };
+}
+
+function shouldProxyBrowserRequest(provider: string) {
+  if (CLOUD_PROVIDER_IDS.has(provider)) {
+    return true;
+  }
+  return provider === "openclaw" && isLocalAppOrigin();
+}
+
+function isLocalAppOrigin() {
+  const hostname = globalThis.location?.hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 async function* streamViaProxy(request: ChatRequest, fetchImpl: FetchLike): AsyncIterable<string> {

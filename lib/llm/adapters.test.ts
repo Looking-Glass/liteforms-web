@@ -214,18 +214,11 @@ describe("LLM adapters", () => {
       );
     });
 
-    it("routes OpenClaw through proxy when no custom fetch is provided to avoid browser CORS", async () => {
-      const proxyFetchMock = vi.fn(async () =>
-        new Response(
-          new ReadableStream({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode("OpenClaw proxied"));
-              controller.close();
-            }
-          })
-        )
+    it("calls OpenClaw directly from hosted browser origins so localhost resolves to the user's machine", async () => {
+      const localFetchMock = vi.fn(async () =>
+        streamResponse(['data: {"choices":[{"delta":{"content":"OpenClaw direct"}}]}\n\n', "data: [DONE]\n\n"])
       );
-      vi.stubGlobal("fetch", proxyFetchMock);
+      vi.stubGlobal("fetch", localFetchMock);
 
       const config: BaseProviderConfig = {
         provider: "openclaw",
@@ -235,7 +228,41 @@ describe("LLM adapters", () => {
       const adapter = createLlmAdapter({ config });
 
       await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
-        "OpenClaw proxied"
+        "OpenClaw direct"
+      );
+
+      expect(localFetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:18789/v1/chat/completions",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"model":"openclaw/default"')
+        })
+      );
+    });
+
+    it("routes OpenClaw through the local Next proxy during localhost development", async () => {
+      const proxyFetchMock = vi.fn(async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("OpenClaw local dev proxied"));
+              controller.close();
+            }
+          })
+        )
+      );
+      vi.stubGlobal("fetch", proxyFetchMock);
+      vi.stubGlobal("location", { hostname: "localhost" });
+
+      const config: BaseProviderConfig = {
+        provider: "openclaw",
+        model: "openclaw/default",
+        baseUrl: "http://127.0.0.1:18789/v1"
+      };
+      const adapter = createLlmAdapter({ config });
+
+      await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+        "OpenClaw local dev proxied"
       );
 
       expect(proxyFetchMock).toHaveBeenCalledWith(
