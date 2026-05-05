@@ -56,6 +56,16 @@ describe("loadEnvironmentGlb", () => {
     expect(parentScene.children).toContain(envScene);
   });
 
+  it("returns the loaded scene so callers can toggle visibility later", async () => {
+    const envScene = new Group();
+    const loader = makeLoader(envScene);
+    const parentScene = new Scene();
+    const reference = new Group();
+
+    await expect(loadEnvironmentGlb("/models/Alcove.glb", loader as any, parentScene, reference))
+      .resolves.toBe(envScene);
+  });
+
   it("sets castShadow=true on all Mesh children of the loaded GLB", async () => {
     const envScene = new Group();
     const meshA = new Mesh();

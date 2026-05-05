@@ -13,11 +13,12 @@ export async function loadEnvironmentGlb(
   loader: Pick<GLTFLoader, "loadAsync">,
   scene: Scene,
   referenceObject: Object3D
-): Promise<void> {
+): Promise<Object3D> {
   const gltf = await loader.loadAsync(url);
   const envScene = gltf.scene;
   envScene.scale.copy(referenceObject.scale);
   envScene.position.copy(referenceObject.position);
   scene.add(envScene);
   setMeshShadowFlags(envScene, true, true);
+  return envScene;
 }

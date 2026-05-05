@@ -7,6 +7,7 @@ import {
   Clock,
   Color,
   DirectionalLight,
+  MOUSE,
   PerspectiveCamera,
   Scene,
   Vector3,
@@ -45,6 +46,16 @@ import {
 } from "@/lib/avatar/modelFraming";
 import { repairMorphTargetDictionaries } from "@/lib/avatar/vrmMorphTargetRepair";
 import type { GltfMeshDef } from "@/lib/avatar/vrmMorphTargetRepair";
+import {
+  HldShadowCompositor,
+  extractSilhouetteFromWebGL,
+  hasOpaqueSilhouettePixels,
+} from "@/lib/avatar/hldShadowCompositor";
+import {
+  isLookingGlassDeviceConnected,
+  openHldHologramWindow,
+} from "@/lib/avatar/hologramWindow";
+import { computeHldCameraInitialPosition } from "@/lib/avatar/hldCameraControls";
 
 type AvatarSceneProps = {
   modelUrl?: string;
@@ -53,6 +64,7 @@ type AvatarSceneProps = {
 const DEFAULT_MODEL_URL = "/models/lobsterEdit.vrm";
 const DEFAULT_IDLE_ANIMATION_URL = "/animations/idle_loop.vrma";
 const ALCOVE_URL = "/models/Alcove.glb";
+const HLD_FALLBACK_ASPECT = 9 / 16;
 const PREVIEW_CAMERA_INITIAL_POSITION = new Vector3(0, 1.2, 3);
 const LOOKING_GLASS_CAMERA_CENTER = new Vector3(-0.071, 0.856, 6.234);
 const LOOKING_GLASS_FOCAL_TARGET = new Vector3(0.003, 0.877, 0.234);
@@ -60,6 +72,7 @@ const LOOKING_GLASS_FOCAL_TARGET = new Vector3(0.003, 0.877, 0.234);
 // Singleton guard: the LKG polyfill overrides navigator.xr globally and must
 // only be constructed once per page lifetime.
 let lkgInitialized = false;
+const hldShadowCompositor = new HldShadowCompositor();
 
 // Cached promise for the lobster model's framed scene height (Y-axis, scene units).
 // Populated the first time it is needed; reused across all subsequent model loads.
@@ -118,8 +131,14 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     // Mutable refs shared between async setup and the sync cleanup closure
     let disposed = false;
     let renderer: WebGLRenderer | undefined;
+    let shadowCanvas: HTMLCanvasElement | undefined;
+    let hldPopup: Window | null = null;
+    let hldPopupCanvas: HTMLCanvasElement | undefined;
+    let hldPopupUnloadListener: (() => void) | undefined;
+    let hldPopupResizeListener: (() => void) | undefined;
     let vrButton: HTMLElement | undefined;
     let controls: OrbitControls | undefined;
+    let environmentObject: Object3D | undefined;
     let currentVrm: VRM | undefined;
     let runtimeAnimator: VrmRuntimeAnimator | undefined;
     let idleAnimator: VrmIdleAnimator | undefined;
@@ -130,6 +149,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let lkgConfigChangeCleanup: (() => void) | undefined;
     let debugWindowCleanup: (() => void) | undefined;
     let xrSessionEndCleanup: (() => void) | undefined;
+    let exitHldFallback: (() => void) | undefined;
+    let isHldFallbackActive = false;
+    let standardCameraPosition = PREVIEW_CAMERA_INITIAL_POSITION.clone();
+    let standardTarget = new Vector3(0, 1, 0);
 
     void import("@lookingglass/webxr").then(({ LookingGlassWebXRPolyfill, LookingGlassConfig }) => {
       if (disposed) return;
@@ -149,7 +172,11 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       const savedBinding = win.XRWebGLBinding;
       win.XRWebGLBinding = undefined;
 
-      renderer = new WebGLRenderer({ antialias: true, alpha: false });
+      renderer = new WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        preserveDrawingBuffer: true,
+      });
 
       win.XRWebGLBinding = savedBinding;
 
@@ -157,10 +184,24 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.outputColorSpace = "srgb";
       renderer.xr.enabled = true;
+      renderer.setClearColor(0xffffff, 0);
+      shadowCanvas = document.createElement("canvas");
+      shadowCanvas.className = "avatar-scene-shadow-canvas";
+      shadowCanvas.setAttribute("aria-hidden", "true");
+      shadowCanvas.hidden = true;
+      container.appendChild(shadowCanvas);
+      renderer.domElement.classList.add("avatar-scene-webgl-canvas");
+      renderer.domElement.addEventListener("contextmenu", (event) => event.preventDefault());
       container.appendChild(renderer.domElement);
 
       const scene = new Scene();
       scene.background = new Color("#15130f");
+      const hldCameraPosition = computeHldCameraInitialPosition(PREVIEW_CAMERA_INITIAL_POSITION);
+      const hldInitialCameraPosition = new Vector3(
+        hldCameraPosition.x,
+        hldCameraPosition.y,
+        hldCameraPosition.z
+      );
 
       let lockedPhi = Math.PI / 2;
       const lockPolarAngle = (cam: PerspectiveCamera, ctrl: OrbitControls) => {
@@ -192,7 +233,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       };
 
       const restorePreviewCamera = () => {
-        camera.position.copy(PREVIEW_CAMERA_INITIAL_POSITION);
+        camera.position.copy(standardCameraPosition);
+        controls!.target.copy(standardTarget);
         camera.lookAt(controls!.target);
         lockPolarAngle(camera, controls!);
         controls!.update();
@@ -204,6 +246,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = false;
       controls.enablePan = false;
+      controls.enableRotate = true;
+      controls.mouseButtons.RIGHT = MOUSE.PAN;
       controls.minDistance = 1;
       controls.maxDistance = 6;
       controls.target.set(0, 1, 0);
@@ -366,8 +410,22 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       lkgControlsObserver.observe(document.body, { childList: true });
 
       const resize = () => {
-        const { clientWidth, clientHeight } = container;
+        let clientWidth = container.clientWidth;
+        let clientHeight = container.clientHeight;
+        if (isHldFallbackActive) {
+          clientHeight = container.clientHeight;
+          clientWidth = Math.round(clientHeight * HLD_FALLBACK_ASPECT);
+          if (clientWidth > container.clientWidth) {
+            clientWidth = container.clientWidth;
+            clientHeight = Math.round(clientWidth / HLD_FALLBACK_ASPECT);
+          }
+        }
         renderer!.setSize(clientWidth, clientHeight, false);
+        if (shadowCanvas) {
+          const dpr = Math.min(window.devicePixelRatio, 2);
+          shadowCanvas.width = Math.max(1, Math.floor(clientWidth * dpr));
+          shadowCanvas.height = Math.max(1, Math.floor(clientHeight * dpr));
+        }
         camera.aspect = clientWidth / Math.max(clientHeight, 1);
         camera.updateProjectionMatrix();
       };
@@ -399,7 +457,11 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         object.scale.setScalar(framing.scale);
         object.position.copy(framing.position);
         controls!.target.copy(framing.cameraTarget);
-        camera.position.copy(PREVIEW_CAMERA_INITIAL_POSITION);
+        standardTarget.copy(framing.cameraTarget);
+        if (!isHldFallbackActive) {
+          standardCameraPosition.copy(PREVIEW_CAMERA_INITIAL_POSITION);
+          camera.position.copy(standardCameraPosition);
+        }
         controls!.update();
         lockPolarAngle(camera, controls!);
       };
@@ -472,7 +534,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           }
           setStatus("");
 
-          void loadEnvironmentGlb(ALCOVE_URL, loader, scene, loadedVrm.scene);
+          void loadEnvironmentGlb(ALCOVE_URL, loader, scene, loadedVrm.scene).then((envScene) => {
+            environmentObject = envScene;
+            environmentObject.visible = !isHldFallbackActive;
+          });
 
           void loadVrmAnimationClip(DEFAULT_IDLE_ANIMATION_URL, loadedVrm, loader).then((clip) => {
             if (disposed || !clip) return;
@@ -488,10 +553,172 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         }
       );
 
+      const setVrButtonLabel = (label: string) => {
+        if (vrButton) vrButton.innerHTML = label;
+      };
+
+      const applyHldFallbackMode = (active: boolean) => {
+        isHldFallbackActive = active;
+        container.classList.toggle("avatar-scene--hld", active);
+        scene.background = active ? null : new Color("#15130f");
+        if (shadowCanvas) shadowCanvas.hidden = !active;
+        if (environmentObject) environmentObject.visible = !active;
+
+        renderer!.xr.enabled = !active;
+        controls!.enablePan = active;
+        controls!.enableRotate = !active;
+        controls!.mouseButtons.LEFT = MOUSE.ROTATE;
+        controls!.mouseButtons.RIGHT = MOUSE.PAN;
+
+        if (active) {
+          standardCameraPosition.copy(camera.position);
+          standardTarget.copy(controls!.target);
+          camera.position.copy(hldInitialCameraPosition);
+          camera.lookAt(controls!.target);
+          lockPolarAngle(camera, controls!);
+          setVrButtonLabel("Make it boring");
+        } else {
+          restorePreviewCamera();
+          setVrButtonLabel("Hologram-iphy");
+        }
+
+        resize();
+      };
+
+      const removeHldPopupListener = () => {
+        if (hldPopup && hldPopupUnloadListener) {
+          hldPopup.removeEventListener("beforeunload", hldPopupUnloadListener);
+        }
+        if (hldPopup && hldPopupResizeListener) {
+          hldPopup.removeEventListener("resize", hldPopupResizeListener);
+        }
+        hldPopupUnloadListener = undefined;
+        hldPopupResizeListener = undefined;
+      };
+
+      exitHldFallback = () => {
+        if (!isHldFallbackActive) return;
+        removeHldPopupListener();
+        const popupToClose = hldPopup;
+        hldPopup = null;
+        hldPopupCanvas = undefined;
+        applyHldFallbackMode(false);
+        if (popupToClose && !popupToClose.closed) {
+          popupToClose.close();
+        }
+      };
+
+      const styleHldPopupDocument = (popup: Window) => {
+        popup.document.title = "Liteforms HLD Hologram";
+        popup.document.body.style.background = "#ffffff";
+        popup.document.body.style.margin = "0";
+        popup.document.body.style.overflow = "hidden";
+        popup.document.body.style.width = "100vw";
+        popup.document.body.style.height = "100vh";
+        popup.document.body.innerHTML = "";
+
+        hldPopupCanvas = popup.document.createElement("canvas");
+        hldPopupCanvas.style.position = "fixed";
+        hldPopupCanvas.style.left = "50%";
+        hldPopupCanvas.style.top = "50%";
+        hldPopupCanvas.style.transform = "translate(-50%, -50%)";
+        hldPopupCanvas.style.width = "min(100vw, calc(100vh * 9 / 16))";
+        hldPopupCanvas.style.height = "min(100vh, calc(100vw * 16 / 9))";
+        hldPopupCanvas.style.aspectRatio = "9 / 16";
+        hldPopupCanvas.style.background = "#ffffff";
+        hldPopupCanvas.addEventListener("contextmenu", (event) => event.preventDefault());
+        const forwardPointerEvent = (event: PointerEvent) => {
+          if (!renderer) return;
+          event.preventDefault();
+          const sourceRect = hldPopupCanvas!.getBoundingClientRect();
+          const targetRect = renderer.domElement.getBoundingClientRect();
+          const xRatio = sourceRect.width > 0 ? (event.clientX - sourceRect.left) / sourceRect.width : 0;
+          const yRatio = sourceRect.height > 0 ? (event.clientY - sourceRect.top) / sourceRect.height : 0;
+          renderer.domElement.dispatchEvent(new PointerEvent(event.type, {
+            bubbles: true,
+            cancelable: true,
+            pointerId: event.pointerId,
+            pointerType: event.pointerType,
+            isPrimary: event.isPrimary,
+            button: event.button,
+            buttons: event.buttons,
+            clientX: targetRect.left + xRatio * targetRect.width,
+            clientY: targetRect.top + yRatio * targetRect.height,
+            ctrlKey: event.ctrlKey,
+            shiftKey: event.shiftKey,
+            altKey: event.altKey,
+            metaKey: event.metaKey,
+          }));
+        };
+        const forwardWheelEvent = (event: WheelEvent) => {
+          if (!renderer) return;
+          event.preventDefault();
+          renderer.domElement.dispatchEvent(new WheelEvent("wheel", {
+            bubbles: true,
+            cancelable: true,
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            deltaZ: event.deltaZ,
+            deltaMode: event.deltaMode,
+            ctrlKey: event.ctrlKey,
+            shiftKey: event.shiftKey,
+            altKey: event.altKey,
+            metaKey: event.metaKey,
+          }));
+        };
+        hldPopupCanvas.addEventListener("pointerdown", forwardPointerEvent);
+        hldPopupCanvas.addEventListener("pointermove", forwardPointerEvent);
+        hldPopupCanvas.addEventListener("pointerup", forwardPointerEvent);
+        hldPopupCanvas.addEventListener("pointercancel", forwardPointerEvent);
+        hldPopupCanvas.addEventListener("wheel", forwardWheelEvent, { passive: false });
+        popup.document.body.appendChild(hldPopupCanvas);
+      };
+
+      const enterHldFallback = async () => {
+        if (isHldFallbackActive) {
+          exitHldFallback?.();
+          return;
+        }
+
+        const popup = await openHldHologramWindow(window);
+        if (disposed) return;
+        hldPopup = popup;
+        if (hldPopup) {
+          styleHldPopupDocument(hldPopup);
+          hldPopupUnloadListener = () => {
+            hldPopup = null;
+            hldPopupCanvas = undefined;
+            applyHldFallbackMode(false);
+          };
+          hldPopupResizeListener = resize;
+          hldPopup.addEventListener("beforeunload", hldPopupUnloadListener);
+          hldPopup.addEventListener("resize", hldPopupResizeListener);
+        }
+
+        applyHldFallbackMode(true);
+      };
+
+      let isLkgSessionActive = false;
       // 3. Add VRButton after polyfill has set navigator.xr, so VRButton's
       //    isSessionSupported query finds the LKG device.
       vrButton = VRButton.createButton(renderer);
       document.body.appendChild(vrButton);
+      vrButton.addEventListener(
+        "click",
+        (event) => {
+          if (isHldFallbackActive) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+              exitHldFallback?.();
+              return;
+          }
+          if (isLookingGlassDeviceConnected(LookingGlassConfig)) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          void enterHldFallback();
+        },
+        { capture: true }
+      );
 
       // Override the VRButton text. The LKG polyfill asynchronously rewrites
       // innerHTML to "ENTER/EXIT LOOKING GLASS"; watch for those mutations and
@@ -503,16 +730,20 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       // device dimensions at that point. We match the container to those
       // dimensions so that the canvas (which the polyfill also forces to
       // screenW×screenH every frame) displays without distortion.
-      let isLkgSessionActive = false;
       const lkgButtonTextMap: Record<string, string> = {
         "ENTER VR": "Hologram-iphy",
         "ENTER LOOKING GLASS": "Hologram-iphy",
+        "VR NOT SUPPORTED": "Hologram-iphy",
         "EXIT VR": "Make it boring",
         "EXIT LOOKING GLASS": "Make it boring",
       };
       vrButtonTextObserver = new MutationObserver(() => {
         if (!vrButton) return;
         const current = vrButton.innerHTML.trim();
+        if (isHldFallbackActive) {
+          if (current !== "Make it boring") vrButton.innerHTML = "Make it boring";
+          return;
+        }
 
         if (current === "EXIT LOOKING GLASS" || current === "EXIT VR") {
           isLkgSessionActive = true;
@@ -529,17 +760,77 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           resize();
         }
 
-        const override = lkgButtonTextMap[current];
-        if (override) vrButton!.innerHTML = override;
-      });
+          const override = lkgButtonTextMap[current];
+          if (override) {
+            vrButton!.innerHTML = override;
+            if (current === "VR NOT SUPPORTED") {
+              (vrButton as HTMLButtonElement).disabled = false;
+              vrButton.style.cursor = "pointer";
+            }
+          }
+        });
       vrButtonTextObserver.observe(vrButton, { childList: true, subtree: true, characterData: true });
       // Apply immediately in case the button already has text
       const initialText = vrButton.innerHTML.trim();
-      if (lkgButtonTextMap[initialText]) vrButton.innerHTML = lkgButtonTextMap[initialText];
+      if (lkgButtonTextMap[initialText]) {
+        vrButton.innerHTML = lkgButtonTextMap[initialText];
+        if (initialText === "VR NOT SUPPORTED") {
+          (vrButton as HTMLButtonElement).disabled = false;
+          vrButton.style.cursor = "pointer";
+        }
+      }
 
       renderer.xr.addEventListener("sessionend", restorePreviewCamera);
       xrSessionEndCleanup = () => {
         renderer?.xr.removeEventListener("sessionend", restorePreviewCamera);
+      };
+
+      const drawHldShadow = () => {
+        if (!shadowCanvas || !renderer) return;
+        const ctx = shadowCanvas.getContext("2d");
+        if (!ctx) return;
+
+        const width = renderer.domElement.width;
+        const height = renderer.domElement.height;
+        if (width <= 0 || height <= 0) return;
+        if (shadowCanvas.width !== width) shadowCanvas.width = width;
+        if (shadowCanvas.height !== height) shadowCanvas.height = height;
+
+        ctx.clearRect(0, 0, width, height);
+        const gl = renderer.getContext();
+        let silhouette = extractSilhouetteFromWebGL(gl, width, height, 60, false, 0.95);
+        if (!hasOpaqueSilhouettePixels(silhouette)) {
+          silhouette = extractSilhouetteFromWebGL(gl, width, height, 60, true, 0.95);
+          if (!hasOpaqueSilhouettePixels(silhouette)) return;
+        }
+
+        hldShadowCompositor.drawShadowOnly(ctx, width, height, silhouette, {
+          shadowY: 37,
+          shadowX: 0,
+          shadowSkew: 95,
+          shadowPerspective: 50,
+          shadowOpacity: 0.6,
+          shadowBlur: 10,
+          horizontalBlur: 0,
+          scale: 1,
+        });
+      };
+
+      const mirrorHldPopup = () => {
+        if (!hldPopupCanvas || !renderer || !shadowCanvas) return;
+        const sourceCanvas = renderer.domElement;
+        const width = sourceCanvas.width;
+        const height = sourceCanvas.height;
+        if (width <= 0 || height <= 0) return;
+        if (hldPopupCanvas.width !== width) hldPopupCanvas.width = width;
+        if (hldPopupCanvas.height !== height) hldPopupCanvas.height = height;
+
+        const ctx = hldPopupCanvas.getContext("2d");
+        if (!ctx) return;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(shadowCanvas, 0, 0, width, height);
+        ctx.drawImage(sourceCanvas, 0, 0, width, height);
       };
 
       // 4. Use renderer.setAnimationLoop — required for WebXR sessions.
@@ -567,6 +858,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         runtimeAnimator?.update(delta);
         currentVrm?.update(delta);
         renderer!.render(scene, camera);
+        if (isHldFallbackActive) {
+          drawHldShadow();
+          mirrorHldPopup();
+        }
       });
     });
 
@@ -580,6 +875,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       lkgConfigChangeCleanup?.();
       debugWindowCleanup?.();
       xrSessionEndCleanup?.();
+      exitHldFallback?.();
       container.style.aspectRatio = "";
       container.style.maxHeight = "";
       idleAnimator?.dispose();
@@ -589,6 +885,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       controls?.dispose();
       renderer?.dispose();
       renderer?.domElement.remove();
+      shadowCanvas?.remove();
       vrButton?.remove();
       vrmRef.current = undefined;
     };

@@ -6,6 +6,7 @@ declare module "@lookingglass/webxr" {
   type LookingGlassCalibration = {
     screenW: CalibrationValue;
     screenH: CalibrationValue;
+    serial: string;
   };
 
   type LookingGlassViewControls = {

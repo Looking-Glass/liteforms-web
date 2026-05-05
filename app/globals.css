@@ -72,10 +72,34 @@ textarea {
   width: min(100%, 520px);
 }
 
+.avatar-scene--hld {
+  aspect-ratio: 9 / 16;
+  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+  height: min(100vh, calc(100vw * 16 / 9));
+  min-height: 0;
+  width: min(100vw, calc(100vh * 9 / 16));
+}
+
 .avatar-scene canvas {
   display: block;
   height: 100%;
   width: 100%;
+}
+
+.avatar-scene-shadow-canvas,
+.avatar-scene-webgl-canvas {
+  inset: 0;
+  position: absolute;
+}
+
+.avatar-scene-shadow-canvas {
+  z-index: 0;
+}
+
+.avatar-scene-webgl-canvas {
+  z-index: 1;
 }
 
 .avatar-scene-status {
@@ -87,6 +111,7 @@ textarea {
   inset: 0;
   justify-content: center;
   position: absolute;
+  z-index: 2;
 }
 
 /* ── Chat panel ── */
