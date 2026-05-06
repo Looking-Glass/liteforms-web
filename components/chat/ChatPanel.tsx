@@ -7,6 +7,7 @@ import { LocalGemmaWorkerClient } from "@/lib/llm/localGemmaWorker";
 import type { BaseProviderConfig, ChatMessage, LlmProviderId } from "@/lib/llm";
 import {
   createAsrAdapter,
+  createAsrRealtimeSession,
   createTtsAdapter,
   getAsrProviderLabel,
   getTtsProviderLabel,
@@ -19,7 +20,7 @@ import {
 } from "@/lib/speech";
 import type { TtsResult } from "@/lib/speech";
 import { DistilWhisperWorkerClient, KokoroWorkerClient } from "@/lib/speech/workerClient";
-import type { AsrConfig, TtsConfig } from "@/lib/speech";
+import type { AsrConfig, AsrRealtimeSession, TtsConfig } from "@/lib/speech";
 import { dispatchAvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
 import {
   capPreloadUiProgress,
@@ -151,9 +152,9 @@ export function ChatPanel({
     if (initialVrmFileName) setVrmFileName(initialVrmFileName);
   }, [initialVrmFileName]);
 
-  const recorderRef = useRef<MediaRecorder | null>(null);
+  const asrSessionRef = useRef<AsrRealtimeSession | null>(null);
+  const micSessionIdRef = useRef(0);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
-  const audioChunksRef = useRef<BlobPart[]>([]);
   const lastAudioRef = useRef<Blob | null>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -637,21 +638,45 @@ export function ChatPanel({
     setTranscript("");
     try {
       const stream = await getMicrophoneStream();
-      const recorder = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      recorder.addEventListener("dataavailable", (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
+      const sessionId = micSessionIdRef.current + 1;
+      micSessionIdRef.current = sessionId;
+      const session = createAsrRealtimeSession({
+        config: asrConfig,
+        worker: distilWhisperWorkerRef.current,
+        onPartial: (text) => {
+          if (micSessionIdRef.current !== sessionId) return;
+          setLastAsrDebug(`STT: "${text}"`);
+          setTranscript(text);
+        },
+        onTranscript: (text, event) => {
+          if (micSessionIdRef.current !== sessionId) return;
+          if (!event.final) return;
+          setSpeechStatus("idle");
+          const trimmed = text.trim();
+          setLastAsrDebug(trimmed ? `STT: "${trimmed}"` : "STT: finished with no transcript");
+          if (trimmed) {
+            setTranscript("");
+            const input = document.getElementById("message") as HTMLInputElement | null;
+            if (input) {
+              input.value = trimmed;
+            }
+            composerFormRef.current?.requestSubmit();
+          } else {
+            setTranscript("");
+          }
+        },
+        onRecording: (audio) => {
+          if (micSessionIdRef.current !== sessionId) return;
+          lastAudioRef.current = audio;
+        },
+        onError: (caught) => {
+          if (micSessionIdRef.current !== sessionId) return;
+          setSpeechError(caught.message);
+          setSpeechStatus("error");
         }
       });
-      recorder.addEventListener("stop", () => {
-        const audio = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
-        lastAudioRef.current = audio;
-        setLastAsrDebug(`STT: transcribing ${formatBytes(audio.size)} ${audio.type || "audio"}`);
-        void transcribeRecordedAudio(audio, { autoSubmit: true });
-      });
-      recorderRef.current = recorder;
-      recorder.start();
+      asrSessionRef.current = session;
+      session.start(stream);
       setSpeechStatus("listening");
     } catch (caught) {
       setSpeechError(caught instanceof Error ? caught.message : "Microphone access failed.");
@@ -675,9 +700,12 @@ export function ChatPanel({
   }
 
   function stopMicRecording() {
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      recorderRef.current.stop();
+    const session = asrSessionRef.current;
+    if (session?.isActive()) {
       setSpeechStatus("transcribing");
+      void session.stop().catch(() => {
+        // onError owns UI state for transcription failures.
+      });
     }
   }
 
@@ -711,14 +739,6 @@ export function ChatPanel({
     setCacheUsage(usage);
     setLocalModelLoadState(initialLocalModelLoadState);
     setIsClearingCache(false);
-  }
-
-  function useTranscript() {
-    const input = document.getElementById("message") as HTMLInputElement | null;
-    if (input) {
-      input.value = transcript;
-      input.focus();
-    }
   }
 
   function handleVrmLoad(event: React.ChangeEvent<HTMLInputElement>) {
@@ -907,7 +927,6 @@ export function ChatPanel({
         <div style={{ padding: "0 20px 8px" }}>
           <div className="transcript-box">
             <span>{transcript}</span>
-            <button type="button" onClick={useTranscript}>Use</button>
           </div>
         </div>
       ) : null}

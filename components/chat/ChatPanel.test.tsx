@@ -5,7 +5,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import { ChatPanel, _clearPreloadSessionsForTesting } from "./ChatPanel";
 import type { CharacterConfig } from "./ChatPanel";
 import { createLlmAdapter } from "@/lib/llm";
-import { createAsrAdapter, createTtsAdapter } from "@/lib/speech";
+import { createAsrAdapter, createAsrRealtimeSession, createTtsAdapter } from "@/lib/speech";
 
 afterEach(cleanup);
 
@@ -31,6 +31,7 @@ vi.mock("@/lib/llm", async (importOriginal) => {
   return {
     ...actual,
     createLlmAdapter: vi.fn().mockReturnValue({
+      id: "browser-local-gemma",
       streamText: vi.fn().mockReturnValue((async function* () {})())
     })
   };
@@ -41,11 +42,14 @@ vi.mock("@/lib/speech", async (importOriginal) => {
   return {
     ...actual,
     createTtsAdapter: vi.fn().mockReturnValue({
+      provider: "kokoro",
       synthesize: vi.fn().mockResolvedValue(new Blob())
     }),
     createAsrAdapter: vi.fn().mockReturnValue({
+      provider: "distil-whisper",
       transcribe: vi.fn().mockResolvedValue({ text: "" })
     }),
+    createAsrRealtimeSession: vi.fn(),
     playTtsResult: vi.fn().mockResolvedValue(undefined)
   };
 });
@@ -357,7 +361,7 @@ class MockMediaRecorder {
     this.handlers[event].push(handler);
   }
 
-  start() {
+  start(_timeslice?: number) {
     this.state = "recording";
   }
 
@@ -370,9 +374,12 @@ class MockMediaRecorder {
 describe("mic auto-submit flow", () => {
   let capturedRecorder: MockMediaRecorder | null = null;
   let getUserMediaMock: ReturnType<typeof vi.fn>;
+  let latestRealtimeCallbacks: { onPartial?: (text: string) => void; onTranscript?: (text: string, event: { final: boolean }) => void; onError?: (error: Error) => void } | null = null;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     capturedRecorder = null;
+    latestRealtimeCallbacks = null;
     const MockRecorderClass = class extends MockMediaRecorder {
       constructor(...args: unknown[]) {
         super(...args as []);
@@ -396,6 +403,39 @@ describe("mic auto-submit flow", () => {
     // jsdom doesn't support setPointerCapture for synthetic events; stub it out
     // so onPointerDown can proceed to startMicRecording.
     HTMLElement.prototype.setPointerCapture = vi.fn();
+
+    vi.mocked(createAsrAdapter).mockReturnValue({
+      provider: "distil-whisper",
+      transcribe: vi.fn().mockResolvedValue({ text: "" })
+    });
+    vi.mocked(createAsrRealtimeSession).mockImplementation((input) => {
+      latestRealtimeCallbacks = input;
+      let recorder: MediaRecorder | null = null;
+      let active = false;
+      return {
+        start(stream: MediaStream) {
+          recorder = new MediaRecorder(stream);
+          recorder.addEventListener("stop", () => {
+            active = false;
+            const adapter = vi.mocked(createAsrAdapter).mock.results.at(-1)?.value ?? createAsrAdapter({ config: { provider: "distil-whisper" } });
+            void adapter.transcribe(new Blob(["audio"], { type: "audio/webm" })).then(
+              (result: { text: string }) => input.onTranscript?.(result.text, { final: true }),
+              (caught: unknown) => input.onError?.(caught instanceof Error ? caught : new Error("Transcription failed."))
+            );
+          });
+          recorder.start(5000);
+          active = true;
+        },
+        stop() {
+          if (recorder && active) recorder.stop();
+          return Promise.resolve("");
+        },
+        isActive() {
+          return active;
+        },
+        sendAudio: vi.fn()
+      };
+    });
   });
 
   afterEach(() => {
@@ -428,6 +468,7 @@ describe("mic auto-submit flow", () => {
 
   it("calls streamText with the transcribed text when mic recording stops", async () => {
     vi.mocked(createAsrAdapter).mockReturnValue({
+      provider: "distil-whisper",
       transcribe: vi.fn().mockResolvedValue({ text: "Hello from mic" })
     });
 
@@ -452,6 +493,7 @@ describe("mic auto-submit flow", () => {
 
   it("does not show the transcript preview panel after mic recording stops", async () => {
     vi.mocked(createAsrAdapter).mockReturnValue({
+      provider: "distil-whisper",
       transcribe: vi.fn().mockResolvedValue({ text: "Hello from mic" })
     });
 
@@ -466,6 +508,63 @@ describe("mic auto-submit flow", () => {
       expect(screen.queryByRole("button", { name: "Use" })).not.toBeInTheDocument();
     });
     expect(screen.queryByText("Hello from mic", { selector: ".transcript-box span" })).not.toBeInTheDocument();
+  });
+
+  it("shows live partial transcript text while recording is being processed", async () => {
+    renderPanel();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
+    await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
+
+    latestRealtimeCallbacks?.onPartial?.("Live words so far");
+
+    await waitFor(() => {
+      expect(screen.getByText("Live words so far", { selector: ".transcript-box span" })).toBeInTheDocument();
+    });
+  });
+
+  it("ignores stale transcription callbacks after a newer mic session starts", async () => {
+    renderPanel();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
+    await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
+    const firstCallbacks = latestRealtimeCallbacks;
+
+    capturedRecorder!.stop();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Release to send" }));
+    await waitFor(() => {
+      expect(createAsrRealtimeSession).toHaveBeenCalledTimes(2);
+    });
+
+    firstCallbacks?.onTranscript?.("stale text", { final: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(vi.mocked(createLlmAdapter)).not.toHaveBeenCalled();
+  });
+
+  it("surfaces transcription errors and does not submit partial text on failure", async () => {
+    vi.mocked(createAsrRealtimeSession).mockImplementation((input) => {
+      latestRealtimeCallbacks = input;
+      return {
+        start: vi.fn(),
+        stop: vi.fn().mockResolvedValue(""),
+        isActive: vi.fn().mockReturnValue(true),
+        sendAudio: vi.fn()
+      };
+    });
+    vi.mocked(createLlmAdapter).mockClear();
+
+    renderPanel();
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
+    await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
+
+    latestRealtimeCallbacks?.onTranscript?.("partial text", { final: false });
+    latestRealtimeCallbacks?.onError?.(new Error("Transcription failed hard"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Transcription failed hard")).toBeInTheDocument();
+    });
+    expect(vi.mocked(createLlmAdapter)).not.toHaveBeenCalled();
   });
 });
 
@@ -552,6 +651,7 @@ describe("ChatPanel streaming TTS pipeline", () => {
     let resumeStream: (() => void) | null = null;
 
     vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      id: "browser-local-gemma",
       streamText: vi.fn().mockReturnValue(
         (async function* () {
           yield "Hello. ";
@@ -592,6 +692,7 @@ describe("ChatPanel streaming TTS pipeline", () => {
 
   it("synthesizes each sentence chunk separately", async () => {
     vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      id: "browser-local-gemma",
       streamText: vi.fn().mockReturnValue(
         (async function* () {
           yield "First sentence. Second sentence. Third.";
@@ -618,6 +719,7 @@ describe("ChatPanel streaming TTS pipeline", () => {
 
   it("rewrites decimals before synthesis", async () => {
     vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      id: "browser-local-gemma",
       streamText: vi.fn().mockReturnValue(
         (async function* () {
           yield "The score is 9.5 out of 10.";
@@ -715,7 +817,7 @@ describe("ChatPanel local model preloading", () => {
           return Promise.resolve(undefined);
         }
       )
-    }));
+    }) as never);
 
     render(
       <ChatPanel

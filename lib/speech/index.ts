@@ -1,4 +1,5 @@
 export * from "./asr";
+export * from "./asrRealtime";
 export * from "./audioPlayback";
 export * from "./config";
 export * from "./lipSync";

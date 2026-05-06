@@ -264,7 +264,8 @@ function inferRecordingFileName(audio: Blob) {
 async function decodeAudioBlob(audio: Blob) {
   const context = new AudioContext({ sampleRate: 16000 });
   try {
-    const buffer = await context.decodeAudioData(await audio.arrayBuffer());
+    const bytes = await audio.arrayBuffer();
+    const buffer = await context.decodeAudioData(bytes);
     return mixToMono(buffer);
   } finally {
     await context.close();
