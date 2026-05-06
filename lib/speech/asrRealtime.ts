@@ -6,6 +6,8 @@ export const DEFAULT_ASR_REALTIME_CHUNK_MS = 5000;
 export const DEFAULT_ASR_REALTIME_PCM_HOP_MS = 2000;
 export const DEFAULT_ASR_REALTIME_PCM_WINDOW_MS = 6000;
 export const ASR_REALTIME_PCM_SAMPLE_RATE = 16000;
+// Must stay in sync with DYNAMIC_MIC_RMS_THRESHOLD in ChatPanel — same environment, same speech floor.
+export const ASR_REALTIME_SILENCE_RMS_THRESHOLD = 0.015;
 
 const ASR_REALTIME_DEBUG = false;
 
@@ -395,6 +397,7 @@ function createRollingPcmAsrRealtimeSession({
     void worker
       .transcribe({ ...workerConfig, audio })
       .then((result) => {
+        console.debug(`[ASR gate] transcript chunk: "${result.text}"`);
         appendTranscript(result.text);
       })
       .catch((caught) => {
@@ -412,8 +415,28 @@ function createRollingPcmAsrRealtimeSession({
       });
   };
 
+  const hasSpeechActivity = (audio: Float32Array) => {
+    // Check in ~256ms chunks so a single moment of speech in a longer silence window still passes.
+    const chunkSize = 4096;
+    let peakChunkRms = 0;
+    for (let start = 0; start < audio.length; start += chunkSize) {
+      const end = Math.min(start + chunkSize, audio.length);
+      let sum = 0;
+      for (let i = start; i < end; i++) sum += audio[i] * audio[i];
+      const chunkRms = Math.sqrt(sum / (end - start));
+      if (chunkRms > peakChunkRms) peakChunkRms = chunkRms;
+      if (chunkRms >= ASR_REALTIME_SILENCE_RMS_THRESHOLD) {
+        console.debug(`[ASR gate] PASS — peak chunk RMS ${peakChunkRms.toFixed(4)} >= threshold ${ASR_REALTIME_SILENCE_RMS_THRESHOLD}`);
+        return true;
+      }
+    }
+    console.debug(`[ASR gate] SKIP — peak chunk RMS ${peakChunkRms.toFixed(4)} < threshold ${ASR_REALTIME_SILENCE_RMS_THRESHOLD}`);
+    return false;
+  };
+
   const enqueueWindow = (audio: Float32Array) => {
     if (failed || audio.length === 0) return;
+    if (!hasSpeechActivity(audio)) return;
     if (busy) {
       pendingWindow = audio;
       return;
@@ -445,7 +468,7 @@ function createRollingPcmAsrRealtimeSession({
     stopping = true;
     cleanupAudio();
     const tailWindow = buffer.snapshot(windowSamples);
-    pendingWindow = tailWindow.length > 0 ? tailWindow : null;
+    pendingWindow = tailWindow.length > 0 && hasSpeechActivity(tailWindow) ? tailWindow : null;
     finalizing = waitForIdle().then(() => {
       stopping = false;
       if (failed) throw failed;
@@ -489,7 +512,9 @@ function createRollingPcmAsrRealtimeSession({
         transcript = "";
         pendingWindow = null;
         timer = setInterval(enqueueLatestWindow, pcmHopMs);
-      } catch {
+        console.debug(`[ASR gate] started PCM session — hop ${pcmHopMs}ms, window ${pcmWindowMs}ms, threshold ${ASR_REALTIME_SILENCE_RMS_THRESHOLD}`);
+      } catch (err) {
+        console.debug("[ASR gate] Web Audio setup failed, falling back to MediaRecorder (no silence gate)", err);
         cleanupAudio();
         fallbackSession = fallback();
         fallbackSession.start(stream);

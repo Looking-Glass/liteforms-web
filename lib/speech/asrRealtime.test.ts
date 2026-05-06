@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ASR_REALTIME_PCM_SAMPLE_RATE,
+  ASR_REALTIME_SILENCE_RMS_THRESHOLD,
   createAsrRealtimeSession,
   DEFAULT_ASR_REALTIME_CHUNK_MS,
   DEFAULT_ASR_REALTIME_PCM_HOP_MS,
@@ -191,6 +192,73 @@ describe("realtime ASR session", () => {
       (ASR_REALTIME_PCM_SAMPLE_RATE * DEFAULT_ASR_REALTIME_PCM_WINDOW_MS) / 1000
     );
     expect(finals).toEqual(["tail"]);
+  });
+
+  it("skips transcription for a rolling PCM window that is below the silence RMS threshold", async () => {
+    vi.useFakeTimers();
+    const worker = { transcribe: vi.fn().mockResolvedValue({ text: "you know" }) };
+    vi.stubGlobal("AudioContext", MockAudioContext);
+
+    const session = createAsrRealtimeSession({ config: { provider: "distil-whisper" }, worker });
+    session.start({} as MediaStream);
+
+    const silentSamples = new Float32Array(ASR_REALTIME_PCM_SAMPLE_RATE * 8).fill(ASR_REALTIME_SILENCE_RMS_THRESHOLD * 0.5);
+    MockAudioContext.latest!.emit(silentSamples);
+    await vi.advanceTimersByTimeAsync(DEFAULT_ASR_REALTIME_PCM_HOP_MS);
+
+    expect(worker.transcribe).not.toHaveBeenCalled();
+  });
+
+  it("still transcribes rolling PCM windows with audio above the silence RMS threshold", async () => {
+    vi.useFakeTimers();
+    const worker = { transcribe: vi.fn().mockResolvedValue({ text: "hello" }) };
+    vi.stubGlobal("AudioContext", MockAudioContext);
+
+    const session = createAsrRealtimeSession({ config: { provider: "distil-whisper" }, worker });
+    session.start({} as MediaStream);
+
+    const speechSamples = new Float32Array(ASR_REALTIME_PCM_SAMPLE_RATE * 8).fill(ASR_REALTIME_SILENCE_RMS_THRESHOLD * 2);
+    MockAudioContext.latest!.emit(speechSamples);
+    await vi.advanceTimersByTimeAsync(DEFAULT_ASR_REALTIME_PCM_HOP_MS);
+
+    expect(worker.transcribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("transcribes a window where only one short chunk exceeds the threshold (whole-window avg would be below)", async () => {
+    vi.useFakeTimers();
+    const worker = { transcribe: vi.fn().mockResolvedValue({ text: "hello" }) };
+    vi.stubGlobal("AudioContext", MockAudioContext);
+
+    const session = createAsrRealtimeSession({ config: { provider: "distil-whisper" }, worker });
+    session.start({} as MediaStream);
+
+    // Build a 6-second window: one 4096-sample chunk at 2× threshold, rest at near-silence (0.001).
+    // Whole-window RMS: sqrt((4096*threshold^2 * 4 + (96000-4096)*0.001^2) / 96000) << threshold
+    // Per-chunk peak: the loud chunk has RMS = 2×threshold → passes.
+    const speechChunk = ASR_REALTIME_SILENCE_RMS_THRESHOLD * 2;
+    const mixed = new Float32Array(ASR_REALTIME_PCM_SAMPLE_RATE * 6).fill(0.001);
+    mixed.fill(speechChunk, 0, 4096);
+    MockAudioContext.latest!.emit(mixed);
+    await vi.advanceTimersByTimeAsync(DEFAULT_ASR_REALTIME_PCM_HOP_MS);
+
+    expect(worker.transcribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the final tail window on stop if it contains only silence", async () => {
+    vi.useFakeTimers();
+    const worker = { transcribe: vi.fn().mockResolvedValue({ text: "I'm" }) };
+    vi.stubGlobal("AudioContext", MockAudioContext);
+
+    const session = createAsrRealtimeSession({ config: { provider: "distil-whisper" }, worker });
+    session.start({} as MediaStream);
+
+    const silentSamples = new Float32Array(ASR_REALTIME_PCM_SAMPLE_RATE * 8).fill(ASR_REALTIME_SILENCE_RMS_THRESHOLD * 0.5);
+    MockAudioContext.latest!.emit(silentSamples);
+
+    const result = await session.stop();
+
+    expect(worker.transcribe).not.toHaveBeenCalled();
+    expect(result).toBe("");
   });
 
   it("falls back to MediaRecorder snapshot mode if Web Audio setup fails", () => {

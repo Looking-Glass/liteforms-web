@@ -76,6 +76,7 @@ export type LocalModelLoadState = {
 const GEMMA_MODEL_ID = "onnx-community/gemma-4-E2B-it-ONNX";
 const QWEN_MODEL_ID = "onnx-community/Qwen3.5-0.8B-ONNX";
 const DYNAMIC_MIC_PAUSE_MS = 1500;
+const DYNAMIC_MIC_SPEECH_GATE_MS = 250;
 const DYNAMIC_MIC_RMS_THRESHOLD = 0.015;
 
 const localModelStorageKey = "liteforms.localModels";
@@ -736,6 +737,7 @@ export function ChatPanel({
     let source: MediaStreamAudioSourceNode | null = null;
     let processor: ScriptProcessorNode | null = null;
     let heardSpeech = false;
+    let speechStartedAt = 0;
     let lastSpeechAt = 0;
 
     const cleanup = () => {
@@ -761,10 +763,12 @@ export function ChatPanel({
         const rms = Math.sqrt(sum / Math.max(1, channel.length));
         const now = Date.now();
         if (rms >= DYNAMIC_MIC_RMS_THRESHOLD) {
-          heardSpeech = true;
-          lastSpeechAt = now;
+          if (speechStartedAt === 0) speechStartedAt = now;
+          if (!heardSpeech && now - speechStartedAt >= DYNAMIC_MIC_SPEECH_GATE_MS) heardSpeech = true;
+          if (heardSpeech) lastSpeechAt = now;
           return;
         }
+        speechStartedAt = 0;
         if (heardSpeech && now - lastSpeechAt >= DYNAMIC_MIC_PAUSE_MS && asrSessionRef.current?.isActive()) {
           stopMicRecording();
         }

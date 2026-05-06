@@ -580,6 +580,8 @@ describe("mic auto-submit flow", () => {
     };
 
     dispatchAudio([0.1, 0.1, 0.1]);
+    await vi.advanceTimersByTimeAsync(250);
+    dispatchAudio([0.1, 0.1, 0.1]);
     await vi.advanceTimersByTimeAsync(1499);
     dispatchAudio([0, 0, 0]);
     expect(latestRealtimeSession?.stop).not.toHaveBeenCalled();
@@ -587,6 +589,48 @@ describe("mic auto-submit flow", () => {
     await vi.advanceTimersByTimeAsync(1);
     dispatchAudio([0, 0, 0]);
     expect(latestRealtimeSession?.stop).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("does not arm dynamic silence detection for a brief noise spike", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    let audioProcess: ((event: { inputBuffer: { getChannelData: () => Float32Array } }) => void) | null = null;
+    class MockAudioContext {
+      destination = {};
+      createMediaStreamSource() {
+        return { connect: vi.fn(), disconnect: vi.fn() };
+      }
+      createScriptProcessor() {
+        return {
+          connect: vi.fn(),
+          disconnect: vi.fn(),
+          get onaudioprocess() {
+            return audioProcess;
+          },
+          set onaudioprocess(handler) {
+            audioProcess = handler;
+          }
+        };
+      }
+      close = vi.fn();
+    }
+    vi.stubGlobal("AudioContext", MockAudioContext);
+
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "Start dynamic recording" }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const dispatchAudio = (samples: number[]) => {
+      if (!audioProcess) throw new Error("Dynamic mic detector did not attach an audio process handler.");
+      audioProcess({ inputBuffer: { getChannelData: () => new Float32Array(samples) } });
+    };
+
+    dispatchAudio([0.1, 0.1, 0.1]);
+    await vi.advanceTimersByTimeAsync(1600);
+    dispatchAudio([0, 0, 0]);
+
+    expect(latestRealtimeSession?.stop).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
