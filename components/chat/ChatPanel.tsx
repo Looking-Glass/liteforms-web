@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createLlmAdapter, getDefaultProviderConfig, getProviderLabel, normalizeProviderConfig } from "@/lib/llm";
 import { sanitizeAssistantText } from "@/lib/llm/output";
 import { LocalGemmaWorkerClient } from "@/lib/llm/localGemmaWorker";
@@ -63,6 +63,7 @@ type ChatPanelProps = {
 
 type ChatStatus = "idle" | "streaming" | "error";
 type SpeechStatus = "idle" | "speaking" | "listening" | "transcribing" | "testing" | "error";
+type MicMode = "hold" | "toggle" | "dynamic";
 export type LocalModelId = "gemma" | "qwen-local" | "kokoro" | "distil-whisper";
 export type LocalModelLoadState = {
   id: LocalModelId;
@@ -74,6 +75,8 @@ export type LocalModelLoadState = {
 
 const GEMMA_MODEL_ID = "onnx-community/gemma-4-E2B-it-ONNX";
 const QWEN_MODEL_ID = "onnx-community/Qwen3.5-0.8B-ONNX";
+const DYNAMIC_MIC_PAUSE_MS = 1500;
+const DYNAMIC_MIC_RMS_THRESHOLD = 0.015;
 
 const localModelStorageKey = "liteforms.localModels";
 export const initialLocalModelLoadState: LocalModelLoadState[] = [
@@ -138,6 +141,8 @@ export function ChatPanel({
   const [config, setConfig] = useState<BaseProviderConfig>(initialLlmConfig ?? getDefaultProviderConfig());
   const [ttsConfig, setTtsConfig] = useState<TtsConfig>(initialTtsConfig ?? { provider: "kokoro" });
   const [asrConfig, setAsrConfig] = useState<AsrConfig>(initialAsrConfig ?? { provider: "distil-whisper" });
+  const [micMode, setMicMode] = useState<MicMode>("dynamic");
+  const [micModeMenuOpen, setMicModeMenuOpen] = useState(false);
   const [localModelLoadState, setLocalModelLoadState] = useState<LocalModelLoadState[]>(initialLocalModelLoadState);
   const [cacheUsage, setCacheUsage] = useState<CacheUsage>({
     status: "Checking cache",
@@ -155,6 +160,7 @@ export function ChatPanel({
   const asrSessionRef = useRef<AsrRealtimeSession | null>(null);
   const micSessionIdRef = useRef(0);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
+  const dynamicMicCleanupRef = useRef<(() => void) | null>(null);
   const lastAudioRef = useRef<Blob | null>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -234,6 +240,7 @@ export function ChatPanel({
     void requestMicrophonePermission();
     return () => {
       cancelled = true;
+      cleanupDynamicMicPauseDetection();
       microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
       microphoneStreamRef.current = null;
     };
@@ -651,6 +658,7 @@ export function ChatPanel({
         onTranscript: (text, event) => {
           if (micSessionIdRef.current !== sessionId) return;
           if (!event.final) return;
+          cleanupDynamicMicPauseDetection();
           setSpeechStatus("idle");
           const trimmed = text.trim();
           setLastAsrDebug(trimmed ? `STT: "${trimmed}"` : "STT: finished with no transcript");
@@ -671,12 +679,16 @@ export function ChatPanel({
         },
         onError: (caught) => {
           if (micSessionIdRef.current !== sessionId) return;
+          cleanupDynamicMicPauseDetection();
           setSpeechError(caught.message);
           setSpeechStatus("error");
         }
       });
       asrSessionRef.current = session;
       session.start(stream);
+      if (micMode === "dynamic") {
+        startDynamicMicPauseDetection(stream, sessionId);
+      }
       setSpeechStatus("listening");
     } catch (caught) {
       setSpeechError(caught instanceof Error ? caught.message : "Microphone access failed.");
@@ -700,6 +712,7 @@ export function ChatPanel({
   }
 
   function stopMicRecording() {
+    cleanupDynamicMicPauseDetection();
     const session = asrSessionRef.current;
     if (session?.isActive()) {
       setSpeechStatus("transcribing");
@@ -707,6 +720,99 @@ export function ChatPanel({
         // onError owns UI state for transcription failures.
       });
     }
+  }
+
+  function cleanupDynamicMicPauseDetection() {
+    dynamicMicCleanupRef.current?.();
+    dynamicMicCleanupRef.current = null;
+  }
+
+  function startDynamicMicPauseDetection(stream: MediaStream, sessionId: number) {
+    cleanupDynamicMicPauseDetection();
+    const AudioContextCtor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+    if (!AudioContextCtor) return;
+
+    let context: AudioContext | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let processor: ScriptProcessorNode | null = null;
+    let heardSpeech = false;
+    let lastSpeechAt = 0;
+
+    const cleanup = () => {
+      processor?.disconnect();
+      source?.disconnect();
+      void context?.close?.();
+      processor = null;
+      source = null;
+      context = null;
+    };
+
+    try {
+      context = new AudioContextCtor();
+      source = context.createMediaStreamSource(stream);
+      processor = context.createScriptProcessor(2048, 1, 1);
+      processor.onaudioprocess = (event) => {
+        if (micSessionIdRef.current !== sessionId || micMode !== "dynamic") return;
+        const channel = event.inputBuffer.getChannelData(0);
+        let sum = 0;
+        for (let index = 0; index < channel.length; index += 1) {
+          sum += channel[index] * channel[index];
+        }
+        const rms = Math.sqrt(sum / Math.max(1, channel.length));
+        const now = Date.now();
+        if (rms >= DYNAMIC_MIC_RMS_THRESHOLD) {
+          heardSpeech = true;
+          lastSpeechAt = now;
+          return;
+        }
+        if (heardSpeech && now - lastSpeechAt >= DYNAMIC_MIC_PAUSE_MS && asrSessionRef.current?.isActive()) {
+          stopMicRecording();
+        }
+      };
+      source.connect(processor);
+      processor.connect(context.destination);
+      dynamicMicCleanupRef.current = cleanup;
+    } catch {
+      cleanup();
+    }
+  }
+
+  function getMicButtonLabel() {
+    if (speechStatus === "listening") {
+      if (micMode === "dynamic") return "Listening for pause";
+      return micMode === "toggle" ? "Stop recording" : "Release to send";
+    }
+    if (micMode === "dynamic") return "Start dynamic recording";
+    return micMode === "toggle" ? "Start recording" : "Hold to talk";
+  }
+
+  function getMicButtonModeText() {
+    if (speechStatus === "listening") return "REC";
+    if (micMode === "toggle") return "TAP";
+    if (micMode === "dynamic") return "AUTO";
+    return "HOLD";
+  }
+
+  function handleMicPointerDown(event: PointerEvent<HTMLButtonElement>) {
+    if (micMode !== "hold") return;
+    if (status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking") return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    void startMicRecording();
+  }
+
+  function handleMicClick() {
+    if (micMode === "hold") return;
+    if (status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking") return;
+    if (speechStatus === "listening") {
+      stopMicRecording();
+      return;
+    }
+    void startMicRecording();
+  }
+
+  function selectMicMode(mode: MicMode) {
+    setMicMode(mode);
+    setMicModeMenuOpen(false);
   }
 
   async function transcribeRecordedAudio(audio: Blob, { autoSubmit = false }: { autoSubmit?: boolean } = {}) {
@@ -933,24 +1039,47 @@ export function ChatPanel({
       {error ? <p className="chat-error">{error}</p> : null}
       {speechError ? <p className="chat-error">{speechError}</p> : null}
       <form ref={composerFormRef} className="composer" onSubmit={onSubmit}>
-        <button
-          type="button"
-          className={`mic-btn${speechStatus === "listening" ? " listening" : ""}`}
-          aria-label={speechStatus === "listening" ? "Release to send" : "Hold to talk"}
-          onPointerDown={(e) => {
-            if (status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking") return;
-            e.currentTarget.setPointerCapture(e.pointerId);
-            void startMicRecording();
-          }}
-          onPointerUp={() => stopMicRecording()}
-          onPointerLeave={() => { if (speechStatus === "listening") stopMicRecording(); }}
-          disabled={status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking"}
-        >
-          <span style={{ fontSize: "16px", lineHeight: 1 }}>{speechStatus === "listening" ? "◉" : "🎙"}</span>
-          <span style={{ fontSize: "9px", letterSpacing: "0.06em", lineHeight: 1, fontFamily: "var(--font-mono, monospace)" }}>
-            {speechStatus === "listening" ? "REC" : "HOLD"}
-          </span>
-        </button>
+        <div className="mic-split-button" role="group" aria-label="Mic controls">
+          <button
+            type="button"
+            className={`mic-btn${speechStatus === "listening" ? " listening" : ""}`}
+            aria-label={getMicButtonLabel()}
+            onPointerDown={handleMicPointerDown}
+            onClick={handleMicClick}
+            onPointerUp={() => { if (micMode === "hold") stopMicRecording(); }}
+            onPointerLeave={() => { if (micMode === "hold" && speechStatus === "listening") stopMicRecording(); }}
+            disabled={status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking"}
+          >
+            <span style={{ fontSize: "16px", lineHeight: 1 }}>{speechStatus === "listening" ? "◉" : "🎙"}</span>
+            <span style={{ fontSize: "9px", letterSpacing: "0.06em", lineHeight: 1, fontFamily: "var(--font-mono, monospace)" }}>
+              {getMicButtonModeText()}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="mic-mode-btn"
+            aria-label="Mic mode"
+            aria-haspopup="menu"
+            aria-expanded={micModeMenuOpen}
+            onClick={() => setMicModeMenuOpen((open) => !open)}
+            disabled={speechStatus === "listening" || speechStatus === "transcribing"}
+          >
+            <span aria-hidden="true" />
+          </button>
+          {micModeMenuOpen ? (
+            <div className="mic-mode-menu" role="menu" aria-label="Mic mode">
+              <button type="button" role="menuitem" onClick={() => selectMicMode("hold")}>
+                Hold
+              </button>
+              <button type="button" role="menuitem" onClick={() => selectMicMode("toggle")}>
+                Tap
+              </button>
+              <button type="button" role="menuitem" onClick={() => selectMicMode("dynamic")}>
+                Auto
+              </button>
+            </div>
+          ) : null}
+        </div>
         <label className="sr-only" htmlFor="message">Message</label>
         <input id="message" name="message" placeholder="Type a message…" disabled={status === "streaming"} />
         <button type="submit" className="send-btn" disabled={status === "streaming"}>

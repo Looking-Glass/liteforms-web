@@ -375,11 +375,13 @@ describe("mic auto-submit flow", () => {
   let capturedRecorder: MockMediaRecorder | null = null;
   let getUserMediaMock: ReturnType<typeof vi.fn>;
   let latestRealtimeCallbacks: { onPartial?: (text: string) => void; onTranscript?: (text: string, event: { final: boolean }) => void; onError?: (error: Error) => void } | null = null;
+  let latestRealtimeSession: { stop: ReturnType<typeof vi.fn>; isActive: ReturnType<typeof vi.fn> } | null = null;
 
   beforeEach(() => {
     vi.clearAllMocks();
     capturedRecorder = null;
     latestRealtimeCallbacks = null;
+    latestRealtimeSession = null;
     const MockRecorderClass = class extends MockMediaRecorder {
       constructor(...args: unknown[]) {
         super(...args as []);
@@ -412,7 +414,11 @@ describe("mic auto-submit flow", () => {
       latestRealtimeCallbacks = input;
       let recorder: MediaRecorder | null = null;
       let active = false;
-      return {
+      const stop = vi.fn(() => {
+        if (recorder && active) recorder.stop();
+        return Promise.resolve("");
+      });
+      const session = {
         start(stream: MediaStream) {
           recorder = new MediaRecorder(stream);
           recorder.addEventListener("stop", () => {
@@ -426,23 +432,28 @@ describe("mic auto-submit flow", () => {
           recorder.start(5000);
           active = true;
         },
-        stop() {
-          if (recorder && active) recorder.stop();
-          return Promise.resolve("");
-        },
-        isActive() {
+        stop,
+        isActive: vi.fn(() => {
           return active;
-        },
+        }),
         sendAudio: vi.fn()
       };
+      latestRealtimeSession = session;
+      return session;
     });
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     // @ts-expect-error restoring prototype method
     delete HTMLElement.prototype.setPointerCapture;
   });
+
+  function chooseMicMode(label: string) {
+    fireEvent.click(screen.getByRole("button", { name: "Mic mode" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: label }));
+  }
 
   it("requests microphone permission when the panel mounts", async () => {
     renderPanel();
@@ -459,11 +470,124 @@ describe("mic auto-submit flow", () => {
       expect(getUserMediaMock).toHaveBeenCalledTimes(1);
     });
 
+    chooseMicMode("Hold");
     fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
     await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
 
     expect(getUserMediaMock).toHaveBeenCalledTimes(1);
     expect(capturedRecorder).not.toBeNull();
+  });
+
+  it("renders a mic mode dropdown with auto selected by default", () => {
+    renderPanel();
+
+    const modeButton = screen.getByRole("button", { name: "Mic mode" });
+    expect(modeButton).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Start dynamic recording" })).toBeInTheDocument();
+  });
+
+  it("renders the mic action and mode dropdown as one split button", () => {
+    renderPanel();
+
+    const splitButton = screen.getByRole("group", { name: "Mic controls" });
+    expect(splitButton).toContainElement(screen.getByRole("button", { name: "Start dynamic recording" }));
+    expect(splitButton).toContainElement(screen.getByRole("button", { name: "Mic mode" }));
+  });
+
+  it("keeps mode text off the dropdown segment and shows choices in a full-width menu", () => {
+    renderPanel();
+
+    const splitButton = screen.getByRole("group", { name: "Mic controls" });
+    const modeButton = screen.getByRole("button", { name: "Mic mode" });
+    expect(modeButton).toHaveTextContent("");
+
+    fireEvent.click(modeButton);
+    const menu = screen.getByRole("menu", { name: "Mic mode" });
+    expect(splitButton).toContainElement(menu);
+    expect(menu).toHaveClass("mic-mode-menu");
+  });
+
+  it("supports click-to-start and click-to-stop mic mode", async () => {
+    renderPanel();
+    chooseMicMode("Tap");
+
+    fireEvent.click(screen.getByRole("button", { name: "Start recording" }));
+    await waitFor(() => screen.getByRole("button", { name: "Stop recording" }));
+    expect(latestRealtimeSession?.stop).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop recording" }));
+    await waitFor(() => {
+      expect(latestRealtimeSession?.stop).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("does not stop click-to-start mode when the pointer leaves the mic button", async () => {
+    renderPanel();
+    chooseMicMode("Tap");
+
+    const micButton = screen.getByRole("button", { name: "Start recording" });
+    fireEvent.click(micButton);
+    await waitFor(() => screen.getByRole("button", { name: "Stop recording" }));
+    fireEvent.pointerLeave(screen.getByRole("button", { name: "Stop recording" }));
+
+    expect(latestRealtimeSession?.stop).not.toHaveBeenCalled();
+  });
+
+  it("supports dynamic mode and keeps the realtime session active until silence detection stops it", async () => {
+    renderPanel();
+    chooseMicMode("Auto");
+
+    fireEvent.click(screen.getByRole("button", { name: "Start dynamic recording" }));
+    await waitFor(() => screen.getByRole("button", { name: "Listening for pause" }));
+
+    expect(createAsrRealtimeSession).toHaveBeenCalled();
+    expect(latestRealtimeSession?.stop).not.toHaveBeenCalled();
+  });
+
+  it("stops dynamic mode after 1500ms of silence following speech", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    let audioProcess: ((event: { inputBuffer: { getChannelData: () => Float32Array } }) => void) | null = null;
+    class MockAudioContext {
+      destination = {};
+      createMediaStreamSource() {
+        return { connect: vi.fn(), disconnect: vi.fn() };
+      }
+      createScriptProcessor() {
+        return {
+          connect: vi.fn(),
+          disconnect: vi.fn(),
+          get onaudioprocess() {
+            return audioProcess;
+          },
+          set onaudioprocess(handler) {
+            audioProcess = handler;
+          }
+        };
+      }
+      close = vi.fn();
+    }
+    vi.stubGlobal("AudioContext", MockAudioContext);
+
+    renderPanel();
+    chooseMicMode("Auto");
+    fireEvent.click(screen.getByRole("button", { name: "Start dynamic recording" }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    const dispatchAudio = (samples: number[]) => {
+      if (!audioProcess) throw new Error("Dynamic mic detector did not attach an audio process handler.");
+      audioProcess({ inputBuffer: { getChannelData: () => new Float32Array(samples) } });
+    };
+
+    dispatchAudio([0.1, 0.1, 0.1]);
+    await vi.advanceTimersByTimeAsync(1499);
+    dispatchAudio([0, 0, 0]);
+    expect(latestRealtimeSession?.stop).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1);
+    dispatchAudio([0, 0, 0]);
+    expect(latestRealtimeSession?.stop).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
   });
 
   it("calls streamText with the transcribed text when mic recording stops", async () => {
@@ -474,6 +598,7 @@ describe("mic auto-submit flow", () => {
 
     renderPanel();
 
+    chooseMicMode("Hold");
     fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
     await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
 
@@ -499,6 +624,7 @@ describe("mic auto-submit flow", () => {
 
     renderPanel();
 
+    chooseMicMode("Hold");
     fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
     await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
 
@@ -513,6 +639,7 @@ describe("mic auto-submit flow", () => {
   it("shows live partial transcript text while recording is being processed", async () => {
     renderPanel();
 
+    chooseMicMode("Hold");
     fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
     await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
 
@@ -526,6 +653,7 @@ describe("mic auto-submit flow", () => {
   it("ignores stale transcription callbacks after a newer mic session starts", async () => {
     renderPanel();
 
+    chooseMicMode("Hold");
     fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
     await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
     const firstCallbacks = latestRealtimeCallbacks;
@@ -555,6 +683,7 @@ describe("mic auto-submit flow", () => {
     vi.mocked(createLlmAdapter).mockClear();
 
     renderPanel();
+    chooseMicMode("Hold");
     fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
     await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
 
