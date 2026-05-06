@@ -714,6 +714,63 @@ describe("mic auto-submit flow", () => {
     expect(vi.mocked(createLlmAdapter)).not.toHaveBeenCalled();
   });
 
+  it("auto-restarts mic recording after full LLM + TTS completion in dynamic mode", async () => {
+    vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      id: "browser-local-gemma",
+      streamText: vi.fn().mockReturnValue(
+        (async function* () { yield "Hello there."; })()
+      )
+    });
+
+    renderPanel(); // default: dynamic mode
+
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Listening for pause" })).toBeInTheDocument();
+    });
+    expect(createAsrRealtimeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not auto-restart mic recording after TTS in hold mode", async () => {
+    vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      id: "browser-local-gemma",
+      streamText: vi.fn().mockReturnValue(
+        (async function* () { yield "Hello there."; })()
+      )
+    });
+
+    renderPanel();
+    chooseMicMode("Hold");
+
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Hold to talk" })).not.toBeDisabled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(createAsrRealtimeSession).not.toHaveBeenCalled();
+  });
+
+  it("does not auto-restart mic recording after TTS in tap mode", async () => {
+    vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      id: "browser-local-gemma",
+      streamText: vi.fn().mockReturnValue(
+        (async function* () { yield "Hello there."; })()
+      )
+    });
+
+    renderPanel();
+    chooseMicMode("Tap");
+
+    fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start recording" })).not.toBeDisabled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(createAsrRealtimeSession).not.toHaveBeenCalled();
+  });
+
   it("surfaces transcription errors and does not submit partial text on failure", async () => {
     vi.mocked(createAsrRealtimeSession).mockImplementation((input) => {
       latestRealtimeCallbacks = input;

@@ -162,6 +162,7 @@ export function ChatPanel({
   const micSessionIdRef = useRef(0);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
   const dynamicMicCleanupRef = useRef<(() => void) | null>(null);
+  const micModeRef = useRef<MicMode>(micMode);
   const lastAudioRef = useRef<Blob | null>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
@@ -212,6 +213,10 @@ export function ChatPanel({
   useEffect(() => {
     onLocalModelLoadStateChange?.(activeLocalModels);
   }, [activeLocalModels, onLocalModelLoadStateChange]);
+
+  useEffect(() => {
+    micModeRef.current = micMode;
+  }, [micMode]);
 
   useEffect(() => {
     if (messageListRef.current) {
@@ -520,6 +525,7 @@ export function ChatPanel({
       let streamDone = false;
       let drainIdx = 0;
       let drainAborted = false;
+      let drainFailed = false;
       setSpeechError("");
       setSpeechStatus("speaking");
       const drainTask = (async () => {
@@ -538,6 +544,7 @@ export function ChatPanel({
           if (!drainAborted) setSpeechStatus("idle");
         } catch (caught) {
           if (!drainAborted) {
+            drainFailed = true;
             setSpeechError(caught instanceof Error ? caught.message : "Speech playback failed.");
             setSpeechStatus("error");
           }
@@ -602,7 +609,10 @@ export function ChatPanel({
 
       setMessages([...nextMessages, { role: "assistant", content: finalSanitized }]);
       setStatus("idle");
-      // drainTask continues in background — no void needed, just let it run
+      await drainTask;
+      if (!drainFailed && micModeRef.current === "dynamic") {
+        await startMicRecording();
+      }
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Provider request failed.";
       setError(message);
@@ -815,6 +825,7 @@ export function ChatPanel({
   }
 
   function selectMicMode(mode: MicMode) {
+    micModeRef.current = mode;
     setMicMode(mode);
     setMicModeMenuOpen(false);
   }
