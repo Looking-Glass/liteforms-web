@@ -42,7 +42,7 @@ describe("speech provider config", () => {
     expect(normalizeAsrConfig({ provider: "elevenlabs", credential: "el" })).toMatchObject({
       provider: "elevenlabs",
       baseUrl: "https://api.elevenlabs.io/v1",
-      model: "scribe_v1"
+      model: "scribe_v2"
     });
 
     expect(speechProviderNeedsCredential("kokoro")).toBe(false);
@@ -109,7 +109,16 @@ describe("new STT provider config normalization", () => {
   it("normalizes xAI STT config with default base URL", () => {
     expect(normalizeAsrConfig({ provider: "xai", credential: "xai-key" })).toMatchObject({
       provider: "xai",
-      baseUrl: "https://api.x.ai/v1"
+      baseUrl: "https://api.x.ai/v1",
+      model: "grok-stt"
+    });
+  });
+
+  it("normalizes Google STT config with default base URL and model", () => {
+    expect(normalizeAsrConfig({ provider: "google", credential: "goog-key" })).toMatchObject({
+      provider: "google",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+      model: "gemini-3-flash-preview"
     });
   });
 
@@ -117,12 +126,12 @@ describe("new STT provider config normalization", () => {
     expect(normalizeAsrConfig({ provider: "mistral", credential: "mist-key" })).toMatchObject({
       provider: "mistral",
       baseUrl: "https://api.mistral.ai/v1",
-      model: "voxtral-mini-transcribe-realtime-2602"
+      model: "voxtral-mini-latest"
     });
   });
 
   it("all new STT providers require a credential", () => {
-    const newProviders: AsrProviderId[] = ["openai", "xai", "mistral"];
+    const newProviders: AsrProviderId[] = ["openai", "google", "xai", "mistral"];
     for (const id of newProviders) {
       expect(speechProviderNeedsCredential(id)).toBe(true);
     }

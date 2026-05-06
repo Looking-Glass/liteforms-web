@@ -1193,7 +1193,7 @@ describe("OnboardingModal STT step - extended providers", () => {
   it("Mistral STT shows model dropdown with voxtral model as default", () => {
     goToSttStep();
     selectSttProvider("mistral");
-    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("voxtral-mini-transcribe-realtime-2602");
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("voxtral-mini-latest");
   });
 
   it("all new cloud STT providers show a credential input", () => {

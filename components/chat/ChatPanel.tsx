@@ -152,6 +152,7 @@ export function ChatPanel({
   }, [initialVrmFileName]);
 
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const microphoneStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<BlobPart[]>([]);
   const lastAudioRef = useRef<Blob | null>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
@@ -209,6 +210,33 @@ export function ChatPanel({
       messageListRef.current.scrollTop = messageListRef.current.scrollHeight;
     }
   }, [messages]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function requestMicrophonePermission() {
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        microphoneStreamRef.current = stream;
+      } catch (caught) {
+        if (!cancelled) {
+          setSpeechError(caught instanceof Error ? caught.message : "Microphone access failed.");
+          setSpeechStatus("error");
+        }
+      }
+    }
+
+    void requestMicrophonePermission();
+    return () => {
+      cancelled = true;
+      microphoneStreamRef.current?.getTracks().forEach((track) => track.stop());
+      microphoneStreamRef.current = null;
+    };
+  }, []);
 
   // Persist config only on actual user edits, not on the initial mount.
   // React fires child effects before parent effects, so on a page refresh this
@@ -608,7 +636,7 @@ export function ChatPanel({
     setLastAsrDebug("STT: recording...");
     setTranscript("");
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await getMicrophoneStream();
       const recorder = new MediaRecorder(stream);
       audioChunksRef.current = [];
       recorder.addEventListener("dataavailable", (event) => {
@@ -617,7 +645,6 @@ export function ChatPanel({
         }
       });
       recorder.addEventListener("stop", () => {
-        stream.getTracks().forEach((track) => track.stop());
         const audio = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
         lastAudioRef.current = audio;
         setLastAsrDebug(`STT: transcribing ${formatBytes(audio.size)} ${audio.type || "audio"}`);
@@ -630,6 +657,21 @@ export function ChatPanel({
       setSpeechError(caught instanceof Error ? caught.message : "Microphone access failed.");
       setSpeechStatus("error");
     }
+  }
+
+  async function getMicrophoneStream() {
+    const existingStream = microphoneStreamRef.current;
+    const existingTracks = existingStream?.getAudioTracks?.() ?? existingStream?.getTracks?.() ?? [];
+    const hasLiveAudioTrack = existingTracks.some((track) => track.readyState === "live");
+    if (existingStream && hasLiveAudioTrack) {
+      return existingStream;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Microphone capture is not available in this browser.");
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    microphoneStreamRef.current = stream;
+    return stream;
   }
 
   function stopMicRecording() {

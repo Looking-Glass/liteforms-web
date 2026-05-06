@@ -23,7 +23,10 @@ export function normalizeTtsConfig(config: TtsConfig): Required<TtsConfig> {
       similarityBoost: config.similarityBoost ?? 0.75,
       style: config.style ?? 0,
       useSpeakerBoost: config.useSpeakerBoost ?? true,
-      speed: config.speed ?? 1
+      speed: config.speed ?? 1,
+      seed: config.seed,
+      languageCode: config.languageCode,
+      applyTextNormalization: config.applyTextNormalization
     } as Required<TtsConfig>;
   }
 
@@ -43,7 +46,9 @@ export function normalizeTtsConfig(config: TtsConfig): Required<TtsConfig> {
       credential: config.credential ?? "",
       baseUrl: config.baseUrl ?? "https://api.openai.com/v1",
       model: config.model ?? "gpt-4o-mini-tts",
-      voice: config.voice ?? "coral"
+      voice: config.voice ?? "coral",
+      speed: config.speed,
+      instructions: config.instructions
     } as Required<TtsConfig>;
   }
 
@@ -103,7 +108,10 @@ export function normalizeTtsConfig(config: TtsConfig): Required<TtsConfig> {
       credential: config.credential ?? "",
       baseUrl: config.baseUrl ?? "https://api.minimax.io",
       model: config.model ?? "speech-2.8-hd",
-      voice: config.voice ?? "English_expressive_narrator"
+      voice: config.voice ?? "English_expressive_narrator",
+      speed: config.speed ?? 1.0,
+      vol: config.vol ?? 1.0,
+      pitch: config.pitch ?? 0
     } as Required<TtsConfig>;
   }
 
@@ -186,6 +194,7 @@ export function normalizeAsrConfig(config: AsrConfig): Required<AsrConfig> {
       baseUrl: config.baseUrl ?? "https://api.deepgram.com/v1",
       model: config.model ?? "nova-3",
       language: config.language ?? "en",
+      prompt: config.prompt,
       autoSend: config.autoSend ?? false
     } as Required<AsrConfig>;
   }
@@ -195,8 +204,9 @@ export function normalizeAsrConfig(config: AsrConfig): Required<AsrConfig> {
       provider: "elevenlabs",
       credential: config.credential ?? "",
       baseUrl: config.baseUrl ?? "https://api.elevenlabs.io/v1",
-      model: config.model ?? "scribe_v1",
+      model: config.model ?? "scribe_v2",
       language: config.language ?? "en",
+      prompt: config.prompt,
       autoSend: config.autoSend ?? false
     } as Required<AsrConfig>;
   }
@@ -208,6 +218,19 @@ export function normalizeAsrConfig(config: AsrConfig): Required<AsrConfig> {
       baseUrl: config.baseUrl ?? "https://api.openai.com/v1",
       model: config.model ?? "gpt-4o-transcribe",
       language: config.language ?? "en",
+      prompt: config.prompt,
+      autoSend: config.autoSend ?? false
+    } as Required<AsrConfig>;
+  }
+
+  if (config.provider === "google") {
+    return {
+      provider: "google",
+      credential: config.credential ?? "",
+      baseUrl: config.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta",
+      model: config.model ?? "gemini-3-flash-preview",
+      language: config.language ?? "en",
+      prompt: config.prompt ?? "Transcribe the audio.",
       autoSend: config.autoSend ?? false
     } as Required<AsrConfig>;
   }
@@ -217,8 +240,9 @@ export function normalizeAsrConfig(config: AsrConfig): Required<AsrConfig> {
       provider: "xai",
       credential: config.credential ?? "",
       baseUrl: config.baseUrl ?? "https://api.x.ai/v1",
-      model: config.model ?? "",
+      model: config.model ?? "grok-stt",
       language: config.language ?? "en",
+      prompt: config.prompt,
       autoSend: config.autoSend ?? false
     } as Required<AsrConfig>;
   }
@@ -228,8 +252,9 @@ export function normalizeAsrConfig(config: AsrConfig): Required<AsrConfig> {
     provider: "mistral",
     credential: (config as { credential?: string }).credential ?? "",
     baseUrl: (config as { baseUrl?: string }).baseUrl ?? "https://api.mistral.ai/v1",
-    model: (config as { model?: string }).model ?? "voxtral-mini-transcribe-realtime-2602",
+    model: (config as { model?: string }).model ?? "voxtral-mini-latest",
     language: (config as { language?: string }).language ?? "en",
+    prompt: (config as { prompt?: string }).prompt,
     autoSend: (config as { autoSend?: boolean }).autoSend ?? false
   } as Required<AsrConfig>;
 }
@@ -239,7 +264,7 @@ const CLOUD_TTS_CREDENTIAL_IDS: TtsProviderId[] = [
   "inworld", "minimax", "gradium", "vydra", "xiaomi", "azure-speech", "volcengine"
 ];
 
-const CLOUD_ASR_CREDENTIAL_IDS: AsrProviderId[] = ["deepgram", "elevenlabs", "openai", "xai", "mistral"];
+const CLOUD_ASR_CREDENTIAL_IDS: AsrProviderId[] = ["deepgram", "elevenlabs", "openai", "google", "xai", "mistral"];
 
 export function speechProviderNeedsCredential(provider: TtsProviderId | AsrProviderId) {
   return (CLOUD_TTS_CREDENTIAL_IDS as string[]).includes(provider) ||
@@ -274,6 +299,7 @@ export function getAsrProviderLabel(provider: AsrProviderId): string {
     elevenlabs: "ElevenLabs",
     deepgram: "Deepgram",
     openai: "OpenAI",
+    google: "Google",
     xai: "xAI",
     mistral: "Mistral"
   };

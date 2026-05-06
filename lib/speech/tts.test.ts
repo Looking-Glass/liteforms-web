@@ -324,6 +324,35 @@ describe("new TTS adapters", () => {
     expect(body).toMatchObject({ model: "gpt-4o-mini-tts", input: "Hello", voice: "coral" });
   });
 
+  it("OpenAI TTS includes speed and instructions only when configured", async () => {
+    const fetchMock = mockFetch(async () => audioResponse());
+    const adapter = createTtsAdapter({
+      config: {
+        provider: "openai",
+        credential: "sk-key",
+        voice: "coral",
+        speed: 1.25,
+        instructions: "Speak warmly."
+      },
+      fetch: fetchMock
+    });
+
+    await adapter.synthesize("Hello");
+    const configuredBody = JSON.parse(firstFetchCall(fetchMock).init.body as string);
+    expect(configuredBody).toMatchObject({ speed: 1.25, instructions: "Speak warmly." });
+
+    const fetchWithoutExtras = mockFetch(async () => audioResponse());
+    const adapterWithoutExtras = createTtsAdapter({
+      config: { provider: "openai", credential: "sk-key", voice: "coral" },
+      fetch: fetchWithoutExtras
+    });
+
+    await adapterWithoutExtras.synthesize("Hello");
+    const defaultBody = JSON.parse(firstFetchCall(fetchWithoutExtras).init.body as string);
+    expect(defaultBody).not.toHaveProperty("speed");
+    expect(defaultBody).not.toHaveProperty("instructions");
+  });
+
   it("calls Google TTS with API key in URL and parses base64 audio from JSON", async () => {
     const b64 = btoa(String.fromCharCode(1, 2, 3));
     const fetchMock = mockFetch(async () =>
@@ -340,6 +369,25 @@ describe("new TTS adapters", () => {
     const url = String(fetchMock.mock.calls[0][0]);
     expect(url).toContain("key=goog-key");
     expect(url).toContain("gemini-3.1-flash-tts-preview");
+  });
+
+  it("Google TTS retries once after a transient server error", async () => {
+    const b64 = btoa(String.fromCharCode(1, 2, 3));
+    const fetchMock = mockFetch(async () => {
+      if (fetchMock.mock.calls.length === 1) {
+        return new Response("temporary failure", { status: 500 });
+      }
+      return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: "audio/wav", data: b64 } }] } }] });
+    });
+    const adapter = createTtsAdapter({
+      config: { provider: "google", credential: "goog-key", voice: "Kore" },
+      fetch: fetchMock
+    });
+
+    const result = await adapter.synthesize("Hello");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.mimeType).toBe("audio/wav");
+    expect(result.audio.byteLength).toBe(3);
   });
 
   it("Google TTS: normalises audio/l16 PCM mime type to audio/pcm with correct sampleRate", async () => {
@@ -439,13 +487,13 @@ describe("new TTS adapters", () => {
     expect(String(url)).toBe("https://openrouter.ai/api/v1/audio/speech");
   });
 
-  it("calls MiniMax TTS and decodes hex-encoded audio from JSON response", async () => {
+  it("calls MiniMax TTS v2 and passes voice speed, volume, and pitch", async () => {
     const hexAudio = "010203"; // bytes [1,2,3]
     const fetchMock = mockFetch(async () =>
       Response.json({ base_resp: { status_code: 0 }, data: { audio: hexAudio } })
     );
     const adapter = createTtsAdapter({
-      config: { provider: "minimax", credential: "mm-key", voice: "English_expressive_narrator" },
+      config: { provider: "minimax", credential: "mm-key", voice: "English_expressive_narrator", speed: 1.2, vol: 0.8, pitch: -1 },
       fetch: fetchMock
     });
 
@@ -453,22 +501,79 @@ describe("new TTS adapters", () => {
     expect(result.audio.byteLength).toBe(3);
     const { url, init: opts } = firstFetchCall(fetchMock);
     expect(String(url)).toContain("minimax.io");
-    expect(String(url)).toContain("t2a_pro");
+    expect(String(url)).toContain("t2a_v2");
     expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Bearer mm-key");
+    const body = JSON.parse(opts.body as string);
+    expect(body).toMatchObject({
+      model: "speech-2.8-hd",
+      text: "Hello",
+      voice_setting: { voice_id: "English_expressive_narrator", speed: 1.2, vol: 0.8, pitch: -1 },
+      audio_setting: { sample_rate: 32000, format: "mp3" }
+    });
+    expect(body).not.toHaveProperty("stream");
+    expect(body.audio_setting).not.toHaveProperty("bitrate");
+    expect(body.audio_setting).not.toHaveProperty("channel");
   });
 
-  it("calls Inworld TTS with Bearer auth", async () => {
-    const b64 = btoa(String.fromCharCode(1, 2, 3));
-    const fetchMock = mockFetch(async () => Response.json({ audio: b64 }));
+  it("calls Inworld streaming TTS with Basic auth and concatenates NDJSON audio chunks", async () => {
+    const first = btoa(String.fromCharCode(1, 2));
+    const second = btoa(String.fromCharCode(3, 4));
+    const fetchMock = mockFetch(async () => new Response(
+      `${JSON.stringify({ result: { audioContent: first } })}\n${JSON.stringify({ result: { audioContent: second } })}\n`,
+      { headers: { "content-type": "application/x-ndjson" } }
+    ));
     const adapter = createTtsAdapter({
       config: { provider: "inworld", credential: "iw-key", voice: "Sarah" },
       fetch: fetchMock
     });
 
-    await adapter.synthesize("Hello");
+    const result = await adapter.synthesize("Hello");
     const { url, init: opts } = firstFetchCall(fetchMock);
-    expect(url).toContain("inworld.ai");
-    expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Bearer iw-key");
+    expect(url).toBe("https://api.inworld.ai/tts/v1/voice:stream");
+    expect((opts.headers as Record<string, string>)["Authorization"]).toBe("Basic iw-key");
+    expect(result.mimeType).toBe("audio/mpeg");
+    expect(Array.from(new Uint8Array(result.audio))).toEqual([1, 2, 3, 4]);
+    expect(JSON.parse(opts.body as string)).toEqual({
+      text: "Hello",
+      voiceId: "Sarah",
+      modelId: "inworld-tts-1.5-max",
+      audioConfig: { audioEncoding: "MP3" }
+    });
+  });
+
+  it("ElevenLabs TTS passes seed, language code, and text normalization when configured", async () => {
+    const fetchMock = mockFetch(async () => audioResponse());
+    const adapter = createTtsAdapter({
+      config: {
+        provider: "elevenlabs",
+        credential: "el-key",
+        voiceId: "Rachel",
+        seed: 1234,
+        languageCode: "en",
+        applyTextNormalization: "on"
+      },
+      fetch: fetchMock
+    });
+
+    await adapter.synthesize("Hi");
+    const configuredBody = JSON.parse(firstFetchCall(fetchMock).init.body as string);
+    expect(configuredBody).toMatchObject({
+      seed: 1234,
+      language_code: "en",
+      apply_text_normalization: "on"
+    });
+
+    const fetchWithoutExtras = mockFetch(async () => audioResponse());
+    const adapterWithoutExtras = createTtsAdapter({
+      config: { provider: "elevenlabs", credential: "el-key", voiceId: "Rachel" },
+      fetch: fetchWithoutExtras
+    });
+
+    await adapterWithoutExtras.synthesize("Hi");
+    const defaultBody = JSON.parse(firstFetchCall(fetchWithoutExtras).init.body as string);
+    expect(defaultBody).not.toHaveProperty("seed");
+    expect(defaultBody).not.toHaveProperty("language_code");
+    expect(defaultBody).not.toHaveProperty("apply_text_normalization");
   });
 
   it("calls Gradium TTS using ElevenLabs-style voice endpoint", async () => {

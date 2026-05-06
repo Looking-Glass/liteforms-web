@@ -312,9 +312,9 @@ export const STT_PROVIDER_OPTIONS: AsrProviderOption[] = [
     id: "elevenlabs",
     label: "ElevenLabs",
     defaultBaseUrl: "https://api.elevenlabs.io/v1",
-    defaultModel: "scribe_v2_realtime",
+    defaultModel: "scribe_v2",
     models: [
-      { id: "scribe_v2_realtime", label: "Scribe v2 Realtime" },
+      { id: "scribe_v2", label: "Scribe v2" },
       { id: "scribe_v1", label: "Scribe v1" }
     ],
     needsCredential: true
@@ -328,17 +328,27 @@ export const STT_PROVIDER_OPTIONS: AsrProviderOption[] = [
     needsCredential: true
   },
   {
+    id: "google",
+    label: "Google",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    defaultModel: "gemini-3-flash-preview",
+    models: [{ id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" }],
+    needsCredential: true
+  },
+  {
     id: "xai",
     label: "xAI",
     defaultBaseUrl: "https://api.x.ai/v1",
+    defaultModel: "grok-stt",
+    models: [{ id: "grok-stt", label: "Grok STT" }],
     needsCredential: true
   },
   {
     id: "mistral",
     label: "Mistral",
     defaultBaseUrl: "https://api.mistral.ai/v1",
-    defaultModel: "voxtral-mini-transcribe-realtime-2602",
-    models: [{ id: "voxtral-mini-transcribe-realtime-2602", label: "Voxtral Mini" }],
+    defaultModel: "voxtral-mini-latest",
+    models: [{ id: "voxtral-mini-latest", label: "Voxtral Mini" }],
     needsCredential: true
   }
 ];

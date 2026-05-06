@@ -20,7 +20,7 @@ export type TtsProviderId =
   | "microsoft"
   | "volcengine";
 
-export type AsrProviderId = "distil-whisper" | "deepgram" | "elevenlabs" | "openai" | "xai" | "mistral";
+export type AsrProviderId = "distil-whisper" | "deepgram" | "elevenlabs" | "openai" | "google" | "xai" | "mistral";
 
 export type WordTiming = {
   word: string;
@@ -55,6 +55,9 @@ export type ElevenLabsTtsConfig = {
   style?: number;
   useSpeakerBoost?: boolean;
   speed?: number;
+  seed?: number;
+  languageCode?: string;
+  applyTextNormalization?: "auto" | "on" | "off";
 };
 
 export type DeepgramTtsConfig = {
@@ -74,13 +77,20 @@ type RestTtsConfig<P extends TtsProviderId> = {
   voice?: string;
 };
 
-export type OpenAiTtsConfig = RestTtsConfig<"openai">;
+export type OpenAiTtsConfig = RestTtsConfig<"openai"> & {
+  speed?: number;
+  instructions?: string;
+};
 export type GoogleTtsConfig = RestTtsConfig<"google">;
 export type XaiTtsConfig = RestTtsConfig<"xai">;
 export type DeepInfraTtsConfig = RestTtsConfig<"deepinfra">;
 export type OpenRouterTtsConfig = RestTtsConfig<"openrouter">;
 export type InworldTtsConfig = RestTtsConfig<"inworld">;
-export type MiniMaxTtsConfig = RestTtsConfig<"minimax">;
+export type MiniMaxTtsConfig = RestTtsConfig<"minimax"> & {
+  speed?: number;
+  vol?: number;
+  pitch?: number;
+};
 export type GradiumTtsConfig = RestTtsConfig<"gradium">;
 export type VydraTtsConfig = RestTtsConfig<"vydra">;
 export type XiaomiTtsConfig = RestTtsConfig<"xiaomi">;
@@ -121,6 +131,7 @@ export type DeepgramAsrConfig = {
   baseUrl?: string;
   model?: string;
   language?: string;
+  prompt?: string;
   autoSend?: boolean;
 };
 
@@ -130,6 +141,7 @@ export type ElevenLabsAsrConfig = {
   baseUrl?: string;
   model?: string;
   language?: string;
+  prompt?: string;
   autoSend?: boolean;
 };
 
@@ -140,10 +152,12 @@ type RestAsrConfig<P extends AsrProviderId> = {
   baseUrl?: string;
   model?: string;
   language?: string;
+  prompt?: string;
   autoSend?: boolean;
 };
 
 export type OpenAiAsrConfig = RestAsrConfig<"openai">;
+export type GoogleAsrConfig = RestAsrConfig<"google">;
 export type XaiAsrConfig = RestAsrConfig<"xai">;
 export type MistralAsrConfig = RestAsrConfig<"mistral">;
 
@@ -152,6 +166,7 @@ export type AsrConfig =
   | DeepgramAsrConfig
   | ElevenLabsAsrConfig
   | OpenAiAsrConfig
+  | GoogleAsrConfig
   | XaiAsrConfig
   | MistralAsrConfig;
 

@@ -367,7 +367,10 @@ async function synthesizeElevenLabs(
           style: config.style,
           use_speaker_boost: config.useSpeakerBoost,
           speed: config.speed
-        }
+        },
+        ...(config.seed != null && { seed: config.seed }),
+        ...(config.languageCode?.trim() && { language_code: config.languageCode }),
+        ...(config.applyTextNormalization && { apply_text_normalization: config.applyTextNormalization })
       })
     }
   );
@@ -400,7 +403,7 @@ async function synthesizeDeepgram(
 
 async function synthesizeOpenAiCompatible(
   text: string,
-  config: { credential: string; baseUrl: string; model: string; voice: string },
+  config: { credential: string; baseUrl: string; model: string; voice: string; speed?: number; instructions?: string },
   fetchImpl: FetchLike
 ): Promise<TtsResult> {
   const response = await fetchImpl(`${trimSlash(config.baseUrl)}/audio/speech`, {
@@ -409,7 +412,13 @@ async function synthesizeOpenAiCompatible(
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.credential}`
     },
-    body: JSON.stringify({ model: config.model, input: text, voice: config.voice })
+    body: JSON.stringify({
+      model: config.model,
+      input: text,
+      voice: config.voice,
+      ...(config.speed != null && { speed: config.speed }),
+      ...(config.instructions?.trim() && { instructions: config.instructions })
+    })
   });
   return audioResponse(response);
 }
@@ -453,17 +462,58 @@ async function synthesizeGoogle(
       speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: config.voice } } }
     }
   };
-  const response = await fetchImpl(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody)
-  });
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await synthesizeGoogleOnce(url, requestBody, fetchImpl);
+    } catch (error) {
+      lastError = error;
+      if (!isGoogleTtsRetryableError(error) || attempt > 0) {
+        throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+class GoogleTtsRetryableError extends Error {}
+
+function isGoogleTtsRetryableError(error: unknown): error is GoogleTtsRetryableError {
+  return error instanceof GoogleTtsRetryableError;
+}
+
+async function synthesizeGoogleOnce(
+  url: string,
+  requestBody: {
+    contents: { parts: { text: string }[] }[];
+    generationConfig: {
+      responseModalities: string[];
+      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: string } } };
+    };
+  },
+  fetchImpl: FetchLike
+): Promise<TtsResult> {
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody)
+    });
+  } catch (error) {
+    throw new GoogleTtsRetryableError(error instanceof Error ? error.message : String(error));
+  }
   if (!response.ok) {
-    throw new Error(`Google TTS failed with ${response.status}`);
+    const error = new Error(`Google TTS failed with ${response.status}`);
+    if (response.status >= 500) {
+      throw new GoogleTtsRetryableError(error.message);
+    }
+    throw error;
   }
   const data = await response.json();
   const part = extractGoogleInlineData(data);
-  if (!part) throw new Error("Google TTS: no audio in response");
+  if (!part) throw new GoogleTtsRetryableError("Google TTS: no audio in response");
   const audio = Uint8Array.from(atob(part.data), (c) => c.charCodeAt(0)).buffer;
   const rawMime = (part.mimeType ?? "").toLowerCase();
   const isL16 = rawMime.startsWith("audio/l16") || rawMime.startsWith("audio/pcm");
@@ -483,34 +533,57 @@ async function synthesizeInworld(
   config: { credential: string; baseUrl: string; model: string; voice: string },
   fetchImpl: FetchLike
 ): Promise<TtsResult> {
-  const response = await fetchImpl(`${trimSlash(config.baseUrl)}/studio/v1/tts:synthesize`, {
+  const response = await fetchImpl(`${trimSlash(config.baseUrl)}/tts/v1/voice:stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${config.credential}`
+      Authorization: `Basic ${config.credential}`
     },
     body: JSON.stringify({
       text,
-      config: { modelId: config.model },
-      voice: { name: config.voice }
+      voiceId: config.voice,
+      modelId: config.model,
+      audioConfig: { audioEncoding: "MP3" }
     })
   });
   if (!response.ok) throw new Error(`Inworld TTS failed with ${response.status}`);
-  const data = await response.json();
-  const b64 = (data?.audio ?? data?.data) as string | undefined;
-  if (!b64) throw new Error("Inworld TTS: no audio in response");
-  const audio = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer;
-  return { audio, mimeType: "audio/wav" };
+  const body = await response.text();
+  const chunks: Uint8Array[] = [];
+  for (const line of body.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let parsed: { result?: { audioContent?: string }; error?: { code?: number; message?: string } };
+    try {
+      parsed = JSON.parse(trimmed) as typeof parsed;
+    } catch {
+      throw new Error(`Inworld TTS stream parse error: unexpected non-JSON line: ${trimmed.slice(0, 80)}`);
+    }
+    if (parsed.error) {
+      throw new Error(`Inworld TTS stream error (${parsed.error.code}): ${parsed.error.message}`);
+    }
+    if (parsed.result?.audioContent) {
+      chunks.push(Uint8Array.from(atob(parsed.result.audioContent), (c) => c.charCodeAt(0)));
+    }
+  }
+  if (chunks.length === 0) throw new Error("Inworld TTS: no audio in response");
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const audio = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    audio.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return { audio: audio.buffer, mimeType: "audio/mpeg" };
 }
 
 // ── MiniMax ───────────────────────────────────────────────────────────────────
 
 async function synthesizeMiniMax(
   text: string,
-  config: { credential: string; baseUrl: string; model: string; voice: string },
+  config: { credential: string; baseUrl: string; model: string; voice: string; speed: number; vol: number; pitch: number },
   fetchImpl: FetchLike
 ): Promise<TtsResult> {
-  const response = await fetchImpl(`${trimSlash(config.baseUrl)}/v1/t2a_pro`, {
+  const response = await fetchImpl(`${trimSlash(config.baseUrl)}/v1/t2a_v2`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -519,9 +592,8 @@ async function synthesizeMiniMax(
     body: JSON.stringify({
       model: config.model,
       text,
-      stream: false,
-      voice_setting: { voice_id: config.voice, speed: 1.0, vol: 1.0, pitch: 0 },
-      audio_setting: { sample_rate: 32000, bitrate: 128000, format: "mp3", channel: 1 }
+      voice_setting: { voice_id: config.voice, speed: config.speed, vol: config.vol, pitch: config.pitch },
+      audio_setting: { sample_rate: 32000, format: "mp3" }
     })
   });
   if (!response.ok) throw new Error(`MiniMax TTS failed with ${response.status}`);

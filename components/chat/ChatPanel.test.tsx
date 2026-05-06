@@ -369,6 +369,7 @@ class MockMediaRecorder {
 
 describe("mic auto-submit flow", () => {
   let capturedRecorder: MockMediaRecorder | null = null;
+  let getUserMediaMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     capturedRecorder = null;
@@ -380,10 +381,14 @@ describe("mic auto-submit flow", () => {
     };
     vi.stubGlobal("MediaRecorder", MockRecorderClass);
 
-    const mockTrack = { stop: vi.fn() };
-    const mockStream = { getTracks: vi.fn().mockReturnValue([mockTrack]) };
+    const mockTrack = { readyState: "live", stop: vi.fn() };
+    const mockStream = {
+      getAudioTracks: vi.fn().mockReturnValue([mockTrack]),
+      getTracks: vi.fn().mockReturnValue([mockTrack])
+    };
+    getUserMediaMock = vi.fn().mockResolvedValue(mockStream);
     Object.defineProperty(global.navigator, "mediaDevices", {
-      value: { getUserMedia: vi.fn().mockResolvedValue(mockStream) },
+      value: { getUserMedia: getUserMediaMock },
       writable: true,
       configurable: true
     });
@@ -397,6 +402,28 @@ describe("mic auto-submit flow", () => {
     vi.unstubAllGlobals();
     // @ts-expect-error restoring prototype method
     delete HTMLElement.prototype.setPointerCapture;
+  });
+
+  it("requests microphone permission when the panel mounts", async () => {
+    renderPanel();
+
+    await waitFor(() => {
+      expect(getUserMediaMock).toHaveBeenCalledWith({ audio: true });
+    });
+  });
+
+  it("reuses the startup microphone stream when recording starts", async () => {
+    renderPanel();
+
+    await waitFor(() => {
+      expect(getUserMediaMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Hold to talk" }));
+    await waitFor(() => screen.getByRole("button", { name: "Release to send" }));
+
+    expect(getUserMediaMock).toHaveBeenCalledTimes(1);
+    expect(capturedRecorder).not.toBeNull();
   });
 
   it("calls streamText with the transcribed text when mic recording stops", async () => {

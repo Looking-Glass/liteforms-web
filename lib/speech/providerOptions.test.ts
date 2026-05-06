@@ -83,12 +83,13 @@ describe("TTS_PROVIDER_OPTIONS", () => {
 });
 
 describe("STT_PROVIDER_OPTIONS", () => {
-  it("includes all 6 STT providers", () => {
+  it("includes all 7 STT providers", () => {
     const ids = STT_PROVIDER_OPTIONS.map((p) => p.id);
     expect(ids).toContain("distil-whisper");
     expect(ids).toContain("deepgram");
     expect(ids).toContain("elevenlabs");
     expect(ids).toContain("openai");
+    expect(ids).toContain("google");
     expect(ids).toContain("xai");
     expect(ids).toContain("mistral");
   });
@@ -101,7 +102,7 @@ describe("STT_PROVIDER_OPTIONS", () => {
 
   it("Mistral STT has correct default model", () => {
     const opt = STT_PROVIDER_OPTIONS.find((p) => p.id === "mistral")!;
-    expect(opt.defaultModel).toBe("voxtral-mini-transcribe-realtime-2602");
+    expect(opt.defaultModel).toBe("voxtral-mini-latest");
   });
 
   it("distil-whisper does not need a credential", () => {
