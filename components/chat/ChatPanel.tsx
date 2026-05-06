@@ -350,10 +350,9 @@ export function ChatPanel({
     const wantDistilWhisper = normalizedAsrConfig.provider === "distil-whisper";
 
     async function runPreload() {
-      // Check previously-downloaded models upfront. If a model is already in the
-      // browser cache we skip its worker entirely — only missing models download.
-      // This prevents re-running Transformers.js workers (and re-writing metadata)
-      // on every page load while still triggering downloads for newly-added models.
+      // Check previously-downloaded models upfront. Cached LLMs can skip worker
+      // startup, but local speech models still run preload so they can warm the
+      // first TTS/STT inference without re-downloading model files.
       const meta = readLocalModelMetadata();
       const prevDownloaded = new Set(meta?.downloadedIds ?? []);
       let cacheHasFiles = false;
@@ -364,6 +363,8 @@ export function ChatPanel({
       // A model is safe to skip only if it was previously recorded as downloaded
       // AND the browser cache still contains files (i.e. it wasn't cleared).
       const alreadyCached = (id: LocalModelId) =>
+        !preloadCancelledRef.current && prevDownloaded.has(id) && cacheHasFiles;
+      const speechAlreadyCached = (id: LocalModelId) =>
         !preloadCancelledRef.current && prevDownloaded.has(id) && cacheHasFiles;
 
       if (wantGemma) {
@@ -407,39 +408,39 @@ export function ChatPanel({
       }
 
       if (wantKokoro) {
-        if (alreadyCached("kokoro")) {
-          updateLocalModel("kokoro", { status: "ready", progress: 100, message: "Cached" });
-        } else {
-          await preloadLocalModel("kokoro", () =>
-            kokoroWorkerRef.current.preload?.(normalizedTtsConfig, (progress) => {
-              const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
-              updateLocalModel("kokoro", {
-                status: "loading",
-                ...(capped !== undefined ? { progress: capped } : {}),
-                message: progress.message ?? "Loading Kokoro"
-              });
-            })
-          );
+        const kokoroCached = speechAlreadyCached("kokoro");
+        if (kokoroCached) {
+          updateLocalModel("kokoro", { status: "loading", progress: 99, message: "Warming cached model" });
         }
+        await preloadLocalModel("kokoro", () =>
+          kokoroWorkerRef.current.preload?.(normalizedTtsConfig, (progress) => {
+            const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
+            updateLocalModel("kokoro", {
+              status: "loading",
+              ...(capped !== undefined ? { progress: capped } : {}),
+              message: progress.message ?? (kokoroCached ? "Warming cached Kokoro" : "Loading Kokoro")
+            });
+          })
+        );
       } else {
         updateLocalModel("kokoro", { status: "ready", progress: 100, message: "Not used" });
       }
 
       if (wantDistilWhisper) {
-        if (alreadyCached("distil-whisper")) {
-          updateLocalModel("distil-whisper", { status: "ready", progress: 100, message: "Cached" });
-        } else {
-          await preloadLocalModel("distil-whisper", () =>
-            distilWhisperWorkerRef.current.preload?.(normalizedAsrConfig, (progress) => {
-              const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
-              updateLocalModel("distil-whisper", {
-                status: "loading",
-                ...(capped !== undefined ? { progress: capped } : {}),
-                message: progress.message ?? "Loading Distil-Whisper"
-              });
-            })
-          );
+        const distilWhisperCached = speechAlreadyCached("distil-whisper");
+        if (distilWhisperCached) {
+          updateLocalModel("distil-whisper", { status: "loading", progress: 99, message: "Warming cached model" });
         }
+        await preloadLocalModel("distil-whisper", () =>
+          distilWhisperWorkerRef.current.preload?.(normalizedAsrConfig, (progress) => {
+            const capped = capPreloadUiProgress(normalizeHuggingfaceProgress(progress.progress));
+            updateLocalModel("distil-whisper", {
+              status: "loading",
+              ...(capped !== undefined ? { progress: capped } : {}),
+              message: progress.message ?? (distilWhisperCached ? "Warming cached Distil-Whisper" : "Loading Distil-Whisper")
+            });
+          })
+        );
       } else {
         updateLocalModel("distil-whisper", { status: "ready", progress: 100, message: "Not used" });
       }

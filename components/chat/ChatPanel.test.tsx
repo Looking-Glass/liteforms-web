@@ -1006,6 +1006,7 @@ describe("ChatPanel local model preloading", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     _clearPreloadSessionsForTesting();
+    localStorage.clear();
   });
 
   it("does not start preloading on mount without shouldPreloadLocalModels", async () => {
@@ -1034,6 +1035,50 @@ describe("ChatPanel local model preloading", () => {
     await waitFor(() => {
       expect(screen.getAllByText("Ready")).toHaveLength(3);
     });
+  });
+
+  it("still preloads cached local speech models so their first inference is warm", async () => {
+    const { LocalGemmaWorkerClient } = await import("@/lib/llm/localGemmaWorker");
+    const { KokoroWorkerClient, DistilWhisperWorkerClient } = await import("@/lib/speech/workerClient");
+    const cachedResponse = { headers: { get: vi.fn().mockReturnValue("1024") } };
+    const cache = {
+      keys: vi.fn().mockResolvedValue(["https://example.test/model.onnx"]),
+      match: vi.fn().mockResolvedValue(cachedResponse)
+    };
+    Object.defineProperty(globalThis, "caches", {
+      configurable: true,
+      value: {
+        keys: vi.fn().mockResolvedValue(["liteforms-transformers-cache-v1"]),
+        open: vi.fn().mockResolvedValue(cache)
+      }
+    });
+    localStorage.setItem(
+      "liteforms.localModels",
+      JSON.stringify({
+        version: 2,
+        storedAt: "2026-05-06T00:00:00.000Z",
+        downloadedIds: ["gemma", "kokoro", "distil-whisper"],
+        models: []
+      })
+    );
+
+    render(
+      <ChatPanel
+        character={defaultCharacter}
+        onCharacterChange={vi.fn()}
+        onModelUrlChange={vi.fn()}
+        shouldPreloadLocalModels={true}
+      />
+    );
+
+    await waitFor(() => {
+      expect(vi.mocked(KokoroWorkerClient).mock.results.at(0)?.value.preload).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(DistilWhisperWorkerClient).mock.results.at(0)?.value.preload).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText("Cached")).toBeInTheDocument();
+    expect(screen.getAllByText("Ready")).toHaveLength(2);
+    expect(vi.mocked(LocalGemmaWorkerClient).mock.results.at(0)?.value.preload).not.toHaveBeenCalled();
   });
 
   it("throttles rapid progress events and still reaches Ready after flush", async () => {

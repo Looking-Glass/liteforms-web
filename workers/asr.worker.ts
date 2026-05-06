@@ -23,7 +23,8 @@ workerScope.addEventListener("message", async (event: MessageEvent<WorkerMessage
 
   try {
     if (type === "preload") {
-      await getTranscriber(payload, (progress) => postProgress(id, progress));
+      const transcriber = await getTranscriber(payload, (progress) => postProgress(id, progress));
+      await warmupDistilWhisper(transcriber, payload as Omit<AsrWorkerRequest, "audio">);
       workerScope.postMessage({ id, ok: true, result: undefined });
       return;
     }
@@ -82,6 +83,17 @@ async function getTranscriber(request: Omit<AsrWorkerRequest, "audio">, onProgre
   }) as Promise<unknown> as Promise<Transcriber>;
   transcriberCache.set(key, created);
   return created;
+}
+
+async function warmupDistilWhisper(transcriber: Transcriber, request: Omit<AsrWorkerRequest, "audio">) {
+  try {
+    await transcriber(new Float32Array(16000), getTranscriptionOptions({
+      ...request,
+      audio: new Float32Array(0)
+    }));
+  } catch {
+    // Warm-up errors are non-fatal; the loaded model can still handle real audio.
+  }
 }
 
 function postProgress(id: number, info: ProgressInfo) {
