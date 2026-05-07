@@ -328,14 +328,6 @@ export const STT_PROVIDER_OPTIONS: AsrProviderOption[] = [
     needsCredential: true
   },
   {
-    id: "google",
-    label: "Google",
-    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta",
-    defaultModel: "gemini-3-flash-preview",
-    models: [{ id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" }],
-    needsCredential: true
-  },
-  {
     id: "xai",
     label: "xAI",
     defaultBaseUrl: "https://api.x.ai/v1",

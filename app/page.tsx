@@ -6,7 +6,7 @@ import { ChatPanel, initialLocalModelLoadState } from "@/components/chat/ChatPan
 import type { CharacterConfig, LocalModelLoadState } from "@/components/chat/ChatPanel";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
 import type { BaseProviderConfig } from "@/lib/llm";
-import type { AsrConfig, TtsConfig } from "@/lib/speech";
+import type { AsrConfig, RealtimeVoiceConfig, TtsConfig } from "@/lib/speech";
 import { saveSessionConfig, loadSessionConfig } from "@/lib/storage/sessionConfig";
 import { saveCharacterConfig, loadCharacterConfig } from "@/lib/storage/characterConfig";
 import { createIndexedDbVrmRepository } from "@/lib/storage/indexedDbVrmRepository";
@@ -36,6 +36,7 @@ export default function HomePage() {
   const [initialLlmConfig, setInitialLlmConfig] = useState<BaseProviderConfig | undefined>(undefined);
   const [initialTtsConfig, setInitialTtsConfig] = useState<TtsConfig | undefined>(undefined);
   const [initialAsrConfig, setInitialAsrConfig] = useState<AsrConfig | undefined>(undefined);
+  const [initialRealtimeVoiceConfig, setInitialRealtimeVoiceConfig] = useState<RealtimeVoiceConfig | undefined>(undefined);
   const [chatPanelKey, setChatPanelKey] = useState(0);
   const [modalLoadState, setModalLoadState] = useState<LocalModelLoadState[]>(initialLocalModelLoadState);
 
@@ -51,6 +52,7 @@ export default function HomePage() {
         setInitialLlmConfig(saved.llm);
         setInitialTtsConfig(saved.tts);
         setInitialAsrConfig(saved.asr);
+        setInitialRealtimeVoiceConfig(saved.realtimeVoice);
         // React 18 batches these updates, so ChatPanel re-mounts in a single
         // re-render with the correct initialConfig — avoiding the two-render
         // cycle where ChatPanel's own useState would ignore an updated prop.
@@ -76,11 +78,11 @@ export default function HomePage() {
     setModalLoadState(state);
   }, []);
 
-  const handleConfigChange = useCallback((llm: BaseProviderConfig, tts: TtsConfig, asr: AsrConfig) => {
+  const handleConfigChange = useCallback((llm: BaseProviderConfig, tts: TtsConfig, asr: AsrConfig, realtimeVoice?: RealtimeVoiceConfig) => {
     // Persist mid-session settings changes so they survive a page refresh.
     const savedMode = localStorage.getItem(onboardingStorageKey);
     if (savedMode === "custom") {
-      saveSessionConfig({ llm, tts, asr });
+      saveSessionConfig({ llm, tts, asr, realtimeVoice });
     }
   }, []);
 
@@ -109,12 +111,13 @@ export default function HomePage() {
     // Modal stays open to show the loading step — closed by handleModalClose
   }
 
-  function handleUseCustom(config: BaseProviderConfig, ttsConfig: TtsConfig, asrConfig: AsrConfig) {
+  function handleUseCustom(config: BaseProviderConfig, ttsConfig: TtsConfig, asrConfig: AsrConfig, realtimeVoiceConfig?: RealtimeVoiceConfig) {
     localStorage.setItem(onboardingStorageKey, "custom");
-    saveSessionConfig({ llm: config, tts: ttsConfig, asr: asrConfig });
+    saveSessionConfig({ llm: config, tts: ttsConfig, asr: asrConfig, realtimeVoice: realtimeVoiceConfig });
     setInitialLlmConfig(config);
     setInitialTtsConfig(ttsConfig);
     setInitialAsrConfig(asrConfig);
+    setInitialRealtimeVoiceConfig(realtimeVoiceConfig);
     // Trigger preloading; ChatPanel's runPreload decides per-model whether to actually download.
     setShouldPreloadLocalModels(true);
     // The modal stays open and transitions itself to the "loading" step (handleCustomStart inside
@@ -153,6 +156,7 @@ export default function HomePage() {
         initialLlmConfig={initialLlmConfig}
         initialTtsConfig={initialTtsConfig}
         initialAsrConfig={initialAsrConfig}
+        initialRealtimeVoiceConfig={initialRealtimeVoiceConfig}
         onLocalModelLoadStateChange={handleLocalModelLoadStateChange}
         onConfigChange={handleConfigChange}
         onOpenConfigure={handleConfigureOpen}
@@ -171,6 +175,7 @@ export default function HomePage() {
           initialLlmConfig={initialLlmConfig}
           initialTtsConfig={initialTtsConfig}
           initialAsrConfig={initialAsrConfig}
+          initialRealtimeVoiceConfig={initialRealtimeVoiceConfig}
           onUseBuiltIn={handleUseBuiltIn}
           onUseCustom={handleUseCustom}
           onClose={handleConfigureClose}

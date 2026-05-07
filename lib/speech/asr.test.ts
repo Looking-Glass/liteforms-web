@@ -130,25 +130,6 @@ describe("new STT adapters", () => {
     expect(init.body).toBeInstanceOf(Uint8Array);
   });
 
-  it("calls Google STT with Gemini inline audio and parses text response", async () => {
-    const fetchMock = mockFetch(async () =>
-      Response.json({ candidates: [{ content: { parts: [{ text: "google heard you" }] } }] })
-    );
-    const adapter = createAsrAdapter({
-      config: { provider: "google", credential: "goog-key", prompt: "Transcribe exactly." },
-      fetch: fetchMock
-    });
-
-    await expect(adapter.transcribe(new Blob(["audio"], { type: "audio/webm" }))).resolves.toMatchObject({
-      text: "google heard you"
-    });
-    const { url, init } = firstFetchCall(fetchMock);
-    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=goog-key");
-    const body = JSON.parse(init.body as string);
-    expect(body.contents[0].parts[0].text).toBe("Transcribe exactly.");
-    expect(body.contents[0].parts[1].inline_data.mime_type).toBe("audio/webm");
-    expect(body.contents[0].parts[1].inline_data.data).toBe(btoa("audio"));
-  });
 });
 
 function stubAudioContext() {

@@ -82,6 +82,23 @@ describe("saveSessionConfig + loadSessionConfig round-trip", () => {
     expect(loaded!.asr.provider).toBe("distil-whisper");
   });
 
+  it("persists and restores optional realtime voice config", () => {
+    saveSessionConfig({
+      llm: { provider: "google", model: "gemini-3.1-pro-preview" },
+      tts: { provider: "google", credential: "google-key" },
+      asr: { provider: "distil-whisper" },
+      realtimeVoice: { provider: "google-live", credential: "google-key", model: "gemini-live", voice: "Kore" }
+    });
+
+    const loaded = loadSessionConfig();
+
+    expect(loaded!.realtimeVoice).toMatchObject({
+      provider: "google-live",
+      credential: "google-key",
+      model: "gemini-live"
+    });
+  });
+
   it("overwrites an existing entry on repeated saves", () => {
     saveSessionConfig({
       llm: { provider: "openai", model: "gpt-4o" },

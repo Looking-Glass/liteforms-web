@@ -83,13 +83,14 @@ describe("TTS_PROVIDER_OPTIONS", () => {
 });
 
 describe("STT_PROVIDER_OPTIONS", () => {
-  it("includes all 7 STT providers", () => {
+  it("includes STT-only providers and excludes Google realtime voice", () => {
     const ids = STT_PROVIDER_OPTIONS.map((p) => p.id);
     expect(ids).toContain("distil-whisper");
     expect(ids).toContain("deepgram");
     expect(ids).toContain("elevenlabs");
     expect(ids).toContain("openai");
-    expect(ids).toContain("google");
+    expect(ids).not.toContain("google");
+    expect(ids).not.toContain("google-live");
     expect(ids).toContain("xai");
     expect(ids).toContain("mistral");
   });

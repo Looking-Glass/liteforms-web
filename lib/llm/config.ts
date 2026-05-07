@@ -13,6 +13,7 @@ const defaultBaseUrls = {
   lmstudio: "http://localhost:1234/v1",
   openclaw: "http://127.0.0.1:18789/v1",
   google: "https://generativelanguage.googleapis.com/v1beta/openai",
+  "google-live": "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
   xai: "https://api.x.ai/v1",
   mistral: "https://api.mistral.ai/v1",
   cerebras: "https://api.cerebras.ai/v1",
@@ -35,6 +36,7 @@ const defaultEndpointModes = {
   lmstudio: "openai-compatible",
   openclaw: "openai-compatible",
   google: "openai-compatible",
+  "google-live": "native",
   xai: "openai-compatible",
   mistral: "openai-compatible",
   cerebras: "openai-compatible",
@@ -61,6 +63,7 @@ export const providerConfigSchema = z
       "lmstudio",
       "openclaw",
       "google",
+      "google-live",
       "xai",
       "mistral",
       "cerebras",
@@ -98,6 +101,10 @@ export function getDefaultProviderConfig(): BaseProviderConfig {
   };
 }
 
+export function isGoogleLiveNativeAudioModel(model: string) {
+  return model.includes("native-audio");
+}
+
 export function normalizeProviderConfig(config: BaseProviderConfig): BaseProviderConfig {
   return providerConfigSchema.parse(config);
 }
@@ -115,6 +122,7 @@ export function getProviderLabel(provider: BaseProviderConfig["provider"]) {
     lmstudio: "LM Studio",
     openclaw: "OpenClaw Gateway",
     google: "Google AI Studio",
+    "google-live": "Google Live (includes TTS and STT)",
     xai: "xAI (Grok)",
     mistral: "Mistral AI",
     cerebras: "Cerebras",

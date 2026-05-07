@@ -22,6 +22,10 @@ describe("LLM provider config", () => {
       baseUrl: "http://127.0.0.1:18789/v1",
       endpointMode: "openai-compatible"
     });
+    expect(providerConfigSchema.parse({ provider: "google-live", model: "gemini-2.5-flash-native-audio-preview-12-2025" })).toMatchObject({
+      baseUrl: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
+      endpointMode: "native"
+    });
   });
 
   it("rejects Liteforms API URLs for MVP LLM traffic", () => {

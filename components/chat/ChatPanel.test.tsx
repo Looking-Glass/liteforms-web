@@ -108,6 +108,18 @@ describe("ChatPanel collapsible sections", () => {
     expect(screen.getByRole("group", { name: "Model provider" })).toHaveTextContent("Browser local (Gemma)");
     expect(screen.getByRole("group", { name: "Voice provider" })).toHaveTextContent("Kokoro local");
   });
+
+  it("shows the Google Live control when realtime voice is configured", () => {
+    renderPanelWithConfig({
+      initialRealtimeVoiceConfig: {
+        provider: "google-live",
+        credential: "google-key",
+        model: "gemini-live",
+        voice: "Kore"
+      }
+    });
+    expect(screen.getByRole("button", { name: /start google live/i })).toBeInTheDocument();
+  });
 });
 
 // ── Character form ───────────────────────────────────────────────────────────

@@ -18,6 +18,14 @@ const CLOUD_PROVIDER_IDS = new Set<string>([
 
 export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
   const config = normalizeProviderConfig(input.config);
+  if (config.provider === "google-live") {
+    return {
+      id: "google-live",
+      async *streamText() {
+        throw new Error("Google Live uses a realtime voice session instead of the text LLM adapter.");
+      }
+    };
+  }
   const fetchImpl = input.fetch ?? fetch;
   // When no custom fetch is injected, assume browser context.
   const useProxy = !input.fetch;
@@ -223,7 +231,7 @@ function formatProviderResponseError(response: Response, config: BaseProviderCon
 export function providerNeedsCredential(config: BaseProviderConfig) {
   return [
     "openai", "chatgpt-subscription", "anthropic", "claude-subscription", "openrouter", "openclaw",
-    "google", "xai", "mistral", "cerebras", "nvidia", "groq", "together", "fireworks", "qwen"
+    "google", "google-live", "xai", "mistral", "cerebras", "nvidia", "groq", "together", "fireworks", "qwen"
   ].includes(config.provider);
 }
 

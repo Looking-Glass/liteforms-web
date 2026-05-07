@@ -1,4 +1,9 @@
 import { createAsrAdapter } from "./asr";
+import {
+  isCloudRealtimeAsrProvider,
+  normalizeCloudRealtimeAsrConfig,
+  type AsrRelayServerMessage
+} from "./asrRealtimeRelay";
 import { normalizeAsrConfig } from "./config";
 import type { AsrConfig, AsrWorkerLike, AsrWorkerRequest } from "./types";
 
@@ -68,6 +73,17 @@ export function createAsrRealtimeSession({
     });
   }
 
+  if (isCloudRealtimeAsrProvider(config.provider)) {
+    return createCloudRelayAsrRealtimeSession({
+      config,
+      worker,
+      onPartial,
+      onTranscript,
+      onRecording,
+      onError
+    });
+  }
+
   return createMediaRecorderAsrRealtimeSession({
     config,
     worker,
@@ -77,6 +93,163 @@ export function createAsrRealtimeSession({
     onRecording,
     onError
   });
+}
+
+function createCloudRelayAsrRealtimeSession({
+  config,
+  worker,
+  onPartial,
+  onTranscript,
+  onRecording,
+  onError
+}: Pick<CreateAsrRealtimeSessionInput, "config" | "worker" | "onPartial" | "onTranscript" | "onRecording" | "onError">): AsrRealtimeSession {
+  const realtimeConfig = normalizeCloudRealtimeAsrConfig(config);
+  if (!realtimeConfig) {
+    return createMediaRecorderAsrRealtimeSession({ config, worker, chunkMs: DEFAULT_ASR_REALTIME_CHUNK_MS, onPartial, onTranscript, onRecording, onError });
+  }
+
+  let context: AudioContext | null = null;
+  let source: MediaStreamAudioSourceNode | null = null;
+  let processor: ScriptProcessorNode | null = null;
+  let socket: WebSocket | null = null;
+  let active = false;
+  let stopping = false;
+  let finalizing: Promise<string> | null = null;
+  let transcript = "";
+  let partialPrefix = "";
+  let failed: Error | null = null;
+  let recordedPcm = new Float32Array(0);
+  let fallbackRecording: Blob | null = null;
+
+  const appendRecording = (samples: Float32Array) => {
+    if (samples.length === 0) return;
+    const next = new Float32Array(recordedPcm.length + samples.length);
+    next.set(recordedPcm, 0);
+    next.set(samples, recordedPcm.length);
+    recordedPcm = next;
+  };
+
+  const emitError = (caught: unknown) => {
+    const error = caught instanceof Error ? caught : new Error("Realtime transcription failed.");
+    failed = error;
+    onError?.(error);
+  };
+
+  const handleMessage = (message: AsrRelayServerMessage) => {
+    if (message.type === "partial") {
+      const text = mergeTranscriptText(transcript, message.text);
+      partialPrefix = text;
+      onPartial?.(text);
+      onTranscript?.(text, { final: false });
+      return;
+    }
+    if (message.type === "transcript") {
+      transcript = mergeTranscriptText(transcript, message.text);
+      partialPrefix = transcript;
+      onPartial?.(transcript);
+      onTranscript?.(transcript, { final: false });
+      return;
+    }
+    if (message.type === "error") {
+      emitError(new Error(message.error));
+    }
+  };
+
+  const cleanupAudio = () => {
+    processor?.disconnect();
+    source?.disconnect();
+    void context?.close?.();
+    processor = null;
+    source = null;
+    context = null;
+    active = false;
+  };
+
+  const finalize = () => {
+    if (finalizing) return finalizing;
+    stopping = true;
+    cleanupAudio();
+    socket?.send(JSON.stringify({ type: "finalize" }));
+    socket?.send(JSON.stringify({ type: "close" }));
+    socket?.close();
+    fallbackRecording = encodeWav(recordedPcm, ASR_REALTIME_PCM_SAMPLE_RATE);
+    if (fallbackRecording.size > 44) onRecording?.(fallbackRecording);
+    finalizing = Promise.resolve().then(async () => {
+      stopping = false;
+      if (failed && fallbackRecording && fallbackRecording.size > 44) {
+        const adapter = createAsrAdapter({ config, worker });
+        const result = await adapter.transcribe(fallbackRecording);
+        transcript = result.text.trim();
+      } else if (failed) {
+        throw failed;
+      }
+      const finalText = transcript.trim() || partialPrefix.trim();
+      onTranscript?.(finalText, { final: true });
+      return finalText;
+    });
+    return finalizing;
+  };
+
+  return {
+    start(stream) {
+      if (active) return;
+      try {
+        const AudioContextCtor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+        if (!AudioContextCtor) throw new Error("Web Audio capture is unavailable.");
+        socket = new WebSocket(toRelayWebSocketUrl("/api/asr/realtime"));
+        socket.binaryType = "arraybuffer";
+        socket.addEventListener("open", () => {
+          socket?.send(JSON.stringify({ type: "start", provider: realtimeConfig.provider, config: realtimeConfig }));
+        });
+        socket.addEventListener("message", (event) => {
+          try {
+            handleMessage(JSON.parse(String(event.data)) as AsrRelayServerMessage);
+          } catch (caught) {
+            emitError(caught);
+          }
+        });
+        socket.addEventListener("error", () => emitError(new Error("Realtime transcription relay failed.")));
+
+        context = new AudioContextCtor();
+        source = context.createMediaStreamSource(stream);
+        processor = context.createScriptProcessor(4096, 1, 1);
+        processor.onaudioprocess = (event) => {
+          const samples = mixAndResampleInputBuffer(event.inputBuffer, ASR_REALTIME_PCM_SAMPLE_RATE);
+          appendRecording(samples);
+          const providerSamples = realtimeConfig.sampleRate === ASR_REALTIME_PCM_SAMPLE_RATE
+            ? samples
+            : resamplePcm(samples, ASR_REALTIME_PCM_SAMPLE_RATE, realtimeConfig.sampleRate);
+          const encoded = realtimeConfig.encoding.includes("mulaw") || realtimeConfig.encoding === "mulaw"
+            ? encodeMuLaw(providerSamples)
+            : encodePcm16(providerSamples);
+          if (socket?.readyState === WebSocket.OPEN) {
+            socket.send(encoded);
+          }
+        };
+        source.connect(processor);
+        processor.connect(context.destination);
+        active = true;
+        stopping = false;
+        failed = null;
+        transcript = "";
+        partialPrefix = "";
+        recordedPcm = new Float32Array(0);
+      } catch (caught) {
+        emitError(caught);
+      }
+    },
+    stop() {
+      return finalize();
+    },
+    isActive() {
+      return active || stopping;
+    },
+    sendAudio(audio) {
+      void audio.arrayBuffer().then((buffer) => {
+        if (socket?.readyState === WebSocket.OPEN) socket.send(buffer);
+      });
+    }
+  };
 }
 
 function createMediaRecorderAsrRealtimeSession({
@@ -797,6 +970,50 @@ function encodeWav(samples: Float32Array, sampleRate: number) {
     view.setInt16(44 + i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
   }
   return new Blob([buffer], { type: "audio/wav" });
+}
+
+function resamplePcm(samples: Float32Array, sourceSampleRate: number, targetSampleRate: number) {
+  if (sourceSampleRate === targetSampleRate) return samples;
+  const outputLength = Math.max(1, Math.round((samples.length * targetSampleRate) / sourceSampleRate));
+  const output = new Float32Array(outputLength);
+  const ratio = sourceSampleRate / targetSampleRate;
+  for (let index = 0; index < output.length; index += 1) {
+    const sourceIndex = index * ratio;
+    const left = Math.floor(sourceIndex);
+    const right = Math.min(left + 1, samples.length - 1);
+    const weight = sourceIndex - left;
+    output[index] = samples[left] * (1 - weight) + samples[right] * weight;
+  }
+  return output;
+}
+
+function encodePcm16(samples: Float32Array) {
+  const bytes = new Uint8Array(samples.length * 2);
+  const view = new DataView(bytes.buffer);
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(i * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+  }
+  return bytes;
+}
+
+function encodeMuLaw(samples: Float32Array) {
+  const output = new Uint8Array(samples.length);
+  for (let i = 0; i < samples.length; i += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[i]));
+    const sign = sample < 0 ? 0x80 : 0;
+    const magnitude = Math.log1p(255 * Math.abs(sample)) / Math.log1p(255);
+    const quantized = Math.min(127, Math.floor(magnitude * 127));
+    output[i] = (~(sign | quantized)) & 0xff;
+  }
+  return output;
+}
+
+function toRelayWebSocketUrl(path: string) {
+  if (typeof window === "undefined") return path;
+  const url = new URL(path, window.location.href);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString();
 }
 
 function writeAscii(view: DataView, offset: number, text: string) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChatMessages } from "./persona";
+import { buildChatMessages, buildPersonaPrompt } from "./persona";
 
 const persona = {
   name: "Ada",
@@ -18,6 +18,13 @@ describe("LLM persona prompt", () => {
     expect(messages[0]).toMatchObject({ role: "system" });
     expect(messages[0]?.content).toContain("Ada");
     expect(messages[0]?.content).toContain("Precise and curious.");
+  });
+
+  it("includes name, pronouns, and personality in the persona prompt", () => {
+    const prompt = buildPersonaPrompt(persona);
+    expect(prompt).toContain("Ada");
+    expect(prompt).toContain("THEY");
+    expect(prompt).toContain("Precise and curious.");
   });
 
   it("never injects Liteforms persona for OpenClaw", () => {

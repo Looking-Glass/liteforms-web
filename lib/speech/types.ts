@@ -20,7 +20,7 @@ export type TtsProviderId =
   | "microsoft"
   | "volcengine";
 
-export type AsrProviderId = "distil-whisper" | "deepgram" | "elevenlabs" | "openai" | "google" | "xai" | "mistral";
+export type AsrProviderId = "distil-whisper" | "deepgram" | "elevenlabs" | "openai" | "xai" | "mistral";
 
 export type WordTiming = {
   word: string;
@@ -133,6 +133,10 @@ export type DeepgramAsrConfig = {
   language?: string;
   prompt?: string;
   autoSend?: boolean;
+  sampleRate?: number;
+  encoding?: string;
+  endpointingMs?: number;
+  interimResults?: boolean;
 };
 
 export type ElevenLabsAsrConfig = {
@@ -143,6 +147,10 @@ export type ElevenLabsAsrConfig = {
   language?: string;
   prompt?: string;
   autoSend?: boolean;
+  sampleRate?: number;
+  encoding?: string;
+  endpointingMs?: number;
+  interimResults?: boolean;
 };
 
 /** Generic shape shared by all new REST-based STT providers. */
@@ -154,10 +162,13 @@ type RestAsrConfig<P extends AsrProviderId> = {
   language?: string;
   prompt?: string;
   autoSend?: boolean;
+  sampleRate?: number;
+  encoding?: string;
+  endpointingMs?: number;
+  interimResults?: boolean;
 };
 
 export type OpenAiAsrConfig = RestAsrConfig<"openai">;
-export type GoogleAsrConfig = RestAsrConfig<"google">;
 export type XaiAsrConfig = RestAsrConfig<"xai">;
 export type MistralAsrConfig = RestAsrConfig<"mistral">;
 
@@ -166,7 +177,6 @@ export type AsrConfig =
   | DeepgramAsrConfig
   | ElevenLabsAsrConfig
   | OpenAiAsrConfig
-  | GoogleAsrConfig
   | XaiAsrConfig
   | MistralAsrConfig;
 

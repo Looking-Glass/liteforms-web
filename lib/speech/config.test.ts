@@ -114,14 +114,6 @@ describe("new STT provider config normalization", () => {
     });
   });
 
-  it("normalizes Google STT config with default base URL and model", () => {
-    expect(normalizeAsrConfig({ provider: "google", credential: "goog-key" })).toMatchObject({
-      provider: "google",
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-      model: "gemini-3-flash-preview"
-    });
-  });
-
   it("normalizes Mistral STT config with default base URL and model", () => {
     expect(normalizeAsrConfig({ provider: "mistral", credential: "mist-key" })).toMatchObject({
       provider: "mistral",
@@ -131,7 +123,7 @@ describe("new STT provider config normalization", () => {
   });
 
   it("all new STT providers require a credential", () => {
-    const newProviders: AsrProviderId[] = ["openai", "google", "xai", "mistral"];
+    const newProviders: AsrProviderId[] = ["openai", "xai", "mistral"];
     for (const id of newProviders) {
       expect(speechProviderNeedsCredential(id)).toBe(true);
     }

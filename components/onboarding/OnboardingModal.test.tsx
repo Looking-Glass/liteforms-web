@@ -300,6 +300,46 @@ describe("OnboardingModal LLM step", () => {
     expect(screen.getByRole("heading", { name: /text-to-speech/i })).toBeInTheDocument();
   });
 
+  it("offers Google Live as an end-to-end model provider", () => {
+    renderModal();
+    goToLlmStep();
+    expect(screen.getByRole("option", { name: /google live \(includes tts and stt\)/i })).toBeInTheDocument();
+  });
+
+  it("shows Live-specific model and voice choices for Google Live", () => {
+    renderModal();
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "google-live" }
+    });
+
+    expect(screen.getByRole("option", { name: /^gemini 2\.5 flash native audio$/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /gemini live 2\.5 flash preview/i })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Voice" })).toHaveValue("Kore");
+    expect(screen.getByRole("option", { name: /aoede - breezy/i })).toBeInTheDocument();
+  });
+
+  it("skips TTS and STT when Google Live is selected on the model step", () => {
+    const onUseCustom = vi.fn();
+    renderModal({ onUseCustom });
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "google-live" }
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Voice" }), { target: { value: "Aoede" } });
+    fireEvent.change(screen.getByLabelText("Google Live credential"), { target: { value: "google-key" } });
+    fireEvent.click(screen.getByRole("button", { name: /start liteforms/i }));
+
+    expect(screen.queryByRole("heading", { name: /text-to-speech/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /speech-to-text/i })).not.toBeInTheDocument();
+    expect(onUseCustom).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "google-live", credential: "google-key" }),
+      expect.objectContaining({ provider: "kokoro" }),
+      expect.objectContaining({ provider: "distil-whisper" }),
+      expect.objectContaining({ provider: "google-live", credential: "google-key", voice: "Aoede" })
+    );
+  });
+
   it("shows endpoint field when a non-local provider is selected", () => {
     renderModal();
     goToLlmStep();
@@ -404,6 +444,7 @@ describe("OnboardingModal TTS step", () => {
     fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
     expect(screen.getByRole("heading", { name: /speech-to-text/i })).toBeInTheDocument();
   });
+
 });
 
 // ── STT step ──────────────────────────────────────────────────────────────────
@@ -996,6 +1037,11 @@ describe("OnboardingModal TTS step - extended providers", () => {
     expect(screen.getByLabelText("Voice provider")).toHaveValue("google");
   });
 
+  it("TTS dropdown does not include Google Live", () => {
+    goToTtsStep();
+    expect(screen.queryByRole("option", { name: /google live/i })).not.toBeInTheDocument();
+  });
+
   it("TTS dropdown includes xAI", () => {
     goToTtsStep();
     selectTtsProvider("xai");
@@ -1212,6 +1258,7 @@ describe("OnboardingModal STT step - extended providers", () => {
     selectSttProvider("distil-whisper");
     expect(screen.queryByLabelText("Transcription credential")).not.toBeInTheDocument();
   });
+
 });
 
 // ── Qwen 3.5 local model ───────────────────────────────────────────────────────

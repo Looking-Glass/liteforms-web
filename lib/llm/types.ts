@@ -10,6 +10,7 @@ export type LlmProviderId =
   | "lmstudio"
   | "openclaw"
   | "google"
+  | "google-live"
   | "xai"
   | "mistral"
   | "cerebras"

@@ -50,15 +50,6 @@ export function createAsrAdapter(input: CreateAsrAdapterInput): AsrAdapter {
     };
   }
 
-  if (config.provider === "google") {
-    return {
-      provider: "google",
-      transcribe(audio) {
-        return transcribeGoogle(audio, config, fetchImpl);
-      }
-    };
-  }
-
   if (config.provider === "xai") {
     return {
       provider: "xai",
@@ -191,50 +182,6 @@ async function transcribeXai(
     text: body?.text ?? "",
     language: normalizeOptionalString(config.language)
   };
-}
-
-// ── Google Gemini ──────────────────────────────────────────────────────────────
-
-async function transcribeGoogle(
-  audio: Blob,
-  config: { credential: string; baseUrl: string; model: string; prompt: string },
-  fetchImpl: FetchLike
-): Promise<AsrResult> {
-  const bytes = new Uint8Array(await audio.arrayBuffer());
-  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join("");
-  const prompt = normalizeOptionalString(config.prompt) ?? "Transcribe the audio.";
-  const response = await fetchImpl(
-    `${trimSlash(config.baseUrl)}/models/${encodeURIComponent(config.model)}:generateContent?key=${encodeURIComponent(config.credential)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { text: prompt },
-              {
-                inline_data: {
-                  mime_type: audio.type || "audio/wav",
-                  data: btoa(binary)
-                }
-              }
-            ]
-          }
-        ]
-      })
-    }
-  );
-  if (!response.ok) {
-    throw new Error(`Google STT failed with ${response.status}`);
-  }
-  const body = await response.json();
-  const text = (body?.candidates?.[0]?.content?.parts ?? [])
-    .map((part: { text?: unknown }) => (typeof part.text === "string" ? part.text.trim() : ""))
-    .filter(Boolean)
-    .join("\n");
-  return { text };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

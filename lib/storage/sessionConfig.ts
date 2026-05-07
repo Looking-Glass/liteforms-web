@@ -1,5 +1,5 @@
 import type { BaseProviderConfig } from "@/lib/llm";
-import type { AsrConfig, TtsConfig } from "@/lib/speech";
+import type { AsrConfig, RealtimeVoiceConfig, TtsConfig } from "@/lib/speech";
 
 export const SESSION_CONFIG_KEY = "liteforms.sessionConfig";
 
@@ -8,6 +8,7 @@ export type SessionConfig = {
   llm: BaseProviderConfig;
   tts: TtsConfig;
   asr: AsrConfig;
+  realtimeVoice?: RealtimeVoiceConfig;
 };
 
 export function saveSessionConfig(config: Omit<SessionConfig, "version">): void {

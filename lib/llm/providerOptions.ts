@@ -1,15 +1,60 @@
 import type { LlmProviderId } from "./types";
 
 export type ProviderModelOption = { id: string; label: string };
+export type ProviderVoiceOption = { id: string; label: string };
 
 export type LlmProviderOption = {
   id: LlmProviderId;
   label: string;
   defaultModel: string;
   defaultBaseUrl?: string;
+  defaultVoice?: string;
   /** Known model list. When present a <select> dropdown is rendered; otherwise a free-text <input>. */
   models?: ProviderModelOption[];
+  /** Known realtime voice list. Currently used by Google Live. */
+  voices?: ProviderVoiceOption[];
 };
+
+export const GOOGLE_LIVE_MODEL_OPTIONS: ProviderModelOption[] = [
+  { id: "gemini-2.5-flash-native-audio-preview-12-2025", label: "Gemini 2.5 Flash Native Audio" },
+  { id: "gemini-live-2.5-flash-preview", label: "Gemini Live 2.5 Flash Preview" },
+  { id: "gemini-2.0-flash-live-001", label: "Gemini 2.0 Flash Live" },
+  { id: "gemini-2.5-flash-preview-native-audio-dialog", label: "Gemini 2.5 Flash Native Audio Dialog" },
+  { id: "gemini-2.5-flash-exp-native-audio-thinking-dialog", label: "Gemini 2.5 Flash Native Audio Thinking" }
+];
+
+export const GOOGLE_LIVE_VOICE_OPTIONS: ProviderVoiceOption[] = [
+  { id: "Zephyr", label: "Zephyr - Bright" },
+  { id: "Puck", label: "Puck - Upbeat" },
+  { id: "Charon", label: "Charon - Informative" },
+  { id: "Kore", label: "Kore - Firm" },
+  { id: "Fenrir", label: "Fenrir - Excitable" },
+  { id: "Leda", label: "Leda - Youthful" },
+  { id: "Orus", label: "Orus - Firm" },
+  { id: "Aoede", label: "Aoede - Breezy" },
+  { id: "Callirrhoe", label: "Callirrhoe - Easy-going" },
+  { id: "Autonoe", label: "Autonoe - Bright" },
+  { id: "Enceladus", label: "Enceladus - Breathy" },
+  { id: "Iapetus", label: "Iapetus - Clear" },
+  { id: "Umbriel", label: "Umbriel - Easy-going" },
+  { id: "Algieba", label: "Algieba - Smooth" },
+  { id: "Despina", label: "Despina - Smooth" },
+  { id: "Erinome", label: "Erinome - Clear" },
+  { id: "Algenib", label: "Algenib - Gravelly" },
+  { id: "Rasalgethi", label: "Rasalgethi - Informative" },
+  { id: "Laomedeia", label: "Laomedeia - Upbeat" },
+  { id: "Achernar", label: "Achernar - Soft" },
+  { id: "Alnilam", label: "Alnilam - Firm" },
+  { id: "Schedar", label: "Schedar - Even" },
+  { id: "Gacrux", label: "Gacrux - Mature" },
+  { id: "Pulcherrima", label: "Pulcherrima - Forward" },
+  { id: "Achird", label: "Achird - Friendly" },
+  { id: "Zubenelgenubi", label: "Zubenelgenubi - Casual" },
+  { id: "Vindemiatrix", label: "Vindemiatrix - Gentle" },
+  { id: "Sadachbia", label: "Sadachbia - Lively" },
+  { id: "Sadaltager", label: "Sadaltager - Knowledgeable" },
+  { id: "Sulafat", label: "Sulafat - Warm" }
+];
 
 export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
@@ -83,6 +128,15 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
       { id: "gemini-pro-latest", label: "Gemini Pro (latest)" },
       { id: "gemini-flash-latest", label: "Gemini Flash (latest)" }
     ]
+  },
+  {
+    id: "google-live",
+    label: "Google Live (includes TTS and STT)",
+    defaultModel: "gemini-2.5-flash-native-audio-preview-12-2025",
+    defaultBaseUrl: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
+    defaultVoice: "Kore",
+    models: GOOGLE_LIVE_MODEL_OPTIONS,
+    voices: GOOGLE_LIVE_VOICE_OPTIONS
   },
   {
     id: "xai",
@@ -216,6 +270,7 @@ export const CREDENTIAL_PROVIDER_IDS: LlmProviderId[] = [
   "anthropic",
   "claude-subscription",
   "google",
+  "google-live",
   "xai",
   "mistral",
   "cerebras",

@@ -223,18 +223,6 @@ export function normalizeAsrConfig(config: AsrConfig): Required<AsrConfig> {
     } as Required<AsrConfig>;
   }
 
-  if (config.provider === "google") {
-    return {
-      provider: "google",
-      credential: config.credential ?? "",
-      baseUrl: config.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta",
-      model: config.model ?? "gemini-3-flash-preview",
-      language: config.language ?? "en",
-      prompt: config.prompt ?? "Transcribe the audio.",
-      autoSend: config.autoSend ?? false
-    } as Required<AsrConfig>;
-  }
-
   if (config.provider === "xai") {
     return {
       provider: "xai",
@@ -264,7 +252,7 @@ const CLOUD_TTS_CREDENTIAL_IDS: TtsProviderId[] = [
   "inworld", "minimax", "gradium", "vydra", "xiaomi", "azure-speech", "volcengine"
 ];
 
-const CLOUD_ASR_CREDENTIAL_IDS: AsrProviderId[] = ["deepgram", "elevenlabs", "openai", "google", "xai", "mistral"];
+const CLOUD_ASR_CREDENTIAL_IDS: AsrProviderId[] = ["deepgram", "elevenlabs", "openai", "xai", "mistral"];
 
 export function speechProviderNeedsCredential(provider: TtsProviderId | AsrProviderId) {
   return (CLOUD_TTS_CREDENTIAL_IDS as string[]).includes(provider) ||
@@ -299,7 +287,6 @@ export function getAsrProviderLabel(provider: AsrProviderId): string {
     elevenlabs: "ElevenLabs",
     deepgram: "Deepgram",
     openai: "OpenAI",
-    google: "Google",
     xai: "xAI",
     mistral: "Mistral"
   };

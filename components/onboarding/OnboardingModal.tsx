@@ -4,7 +4,7 @@ import { useState } from "react";
 import { getDefaultProviderConfig } from "@/lib/llm";
 import type { BaseProviderConfig, LlmProviderId } from "@/lib/llm";
 import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
-import type { AsrConfig, AsrProviderId, TtsConfig, TtsProviderId } from "@/lib/speech";
+import type { AsrConfig, AsrProviderId, RealtimeVoiceConfig, TtsConfig, TtsProviderId } from "@/lib/speech";
 import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import { updateEndpointMode } from "@/components/chat/chatPanelUtils";
 import { OpenClawSetupHint } from "@/components/openclaw/OpenClawSetupHint";
@@ -23,7 +23,7 @@ const SKIP_WELCOME_SCREEN = true;
 
 export type OnboardingModalProps = {
   onUseBuiltIn: () => void;
-  onUseCustom: (config: BaseProviderConfig, ttsConfig: TtsConfig, asrConfig: AsrConfig) => void;
+  onUseCustom: (config: BaseProviderConfig, ttsConfig: TtsConfig, asrConfig: AsrConfig, realtimeVoiceConfig?: RealtimeVoiceConfig) => void;
   onClose: () => void;
   localModelLoadState?: LocalModelLoadState[];
   /** Pre-populate fields and skip the welcome screen (used by the Settings Configure button). */
@@ -31,6 +31,7 @@ export type OnboardingModalProps = {
   initialLlmConfig?: BaseProviderConfig;
   initialTtsConfig?: TtsConfig;
   initialAsrConfig?: AsrConfig;
+  initialRealtimeVoiceConfig?: RealtimeVoiceConfig;
 };
 
 const llmProviderOptions = LLM_PROVIDER_OPTIONS;
@@ -57,7 +58,8 @@ export function OnboardingModal({
   mode,
   initialLlmConfig,
   initialTtsConfig,
-  initialAsrConfig
+  initialAsrConfig,
+  initialRealtimeVoiceConfig
 }: OnboardingModalProps) {
   const [step, setStep] = useState<OnboardingStep>(
     mode === "configure" || SKIP_WELCOME_SCREEN ? "llm" : "welcome"
@@ -72,9 +74,40 @@ export function OnboardingModal({
   );
   const [ttsConfig, setTtsConfig] = useState<TtsConfig>(initialTtsConfig ?? { provider: "kokoro" });
   const [asrConfig, setAsrConfig] = useState<AsrConfig>(initialAsrConfig ?? { provider: "distil-whisper" });
+  const [realtimeVoiceConfig, setRealtimeVoiceConfig] = useState<RealtimeVoiceConfig>(
+    initialRealtimeVoiceConfig ??
+      (initialLlmConfig?.provider === "google-live"
+        ? {
+            provider: "google-live",
+            credential: initialLlmConfig.credential,
+            model: initialLlmConfig.model,
+            voice: "Kore",
+            websocketUrl: initialLlmConfig.baseUrl
+          }
+        : { provider: "none" })
+  );
 
   function updateLlmProvider(providerId: LlmProviderId) {
     const option = llmProviderOptions.find((p) => p.id === providerId) ?? llmProviderOptions[0];
+    if (option.id === "google-live") {
+      const credential = config.provider === "google" ? config.credential : undefined;
+      setRealtimeVoiceConfig({
+        provider: "google-live",
+        credential,
+        model: option.defaultModel,
+        voice: option.defaultVoice,
+        websocketUrl: option.defaultBaseUrl
+      });
+      setConfig({
+        provider: option.id,
+        credential,
+        model: option.defaultModel,
+        baseUrl: option.defaultBaseUrl,
+        endpointMode: updateEndpointMode(option.id)
+      });
+      return;
+    }
+    setRealtimeVoiceConfig({ provider: "none" });
     setConfig({
       provider: option.id,
       model: option.defaultModel,
@@ -87,8 +120,10 @@ export function OnboardingModal({
     const opt = TTS_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? TTS_PROVIDER_OPTIONS[0];
     if (providerId === "kokoro") {
       setTtsConfig({ provider: "kokoro" });
+      setRealtimeVoiceConfig({ provider: "none" });
     } else if (providerId === "elevenlabs") {
       setTtsConfig({ provider: "elevenlabs", voiceId: opt.defaultVoice ?? "Rachel", modelId: opt.defaultModel });
+      setRealtimeVoiceConfig({ provider: "none" });
     } else {
       setTtsConfig({
         provider: providerId as Exclude<TtsProviderId, "kokoro" | "elevenlabs">,
@@ -96,6 +131,7 @@ export function OnboardingModal({
         model: opt.defaultModel,
         baseUrl: opt.defaultBaseUrl
       } as TtsConfig);
+      setRealtimeVoiceConfig({ provider: "none" });
     }
   }
 
@@ -122,21 +158,30 @@ export function OnboardingModal({
   }
 
   function handleCustomStart() {
+    const usesRealtimeVoice = config.provider === "google-live" || realtimeVoiceConfig.provider === "google-live";
     const needsLocalModels =
       config.provider === "browser-local-gemma" ||
       config.provider === "browser-local-qwen" ||
-      ttsConfig.provider === "kokoro" ||
-      asrConfig.provider === "distil-whisper";
+      (!usesRealtimeVoice && ttsConfig.provider === "kokoro") ||
+      (!usesRealtimeVoice && asrConfig.provider === "distil-whisper");
 
     if (mode === "configure" && !needsLocalModels) {
       // All-cloud config: nothing to download, save and close immediately.
-      onUseCustom(config, ttsConfig, asrConfig);
+      submitCustomConfig();
       onClose();
       return;
     }
     // Show the loading step so the user can see download/cache-check progress.
     setStep("loading");
-    onUseCustom(config, ttsConfig, asrConfig);
+    submitCustomConfig();
+  }
+
+  function submitCustomConfig() {
+    if (config.provider !== "google-live" && realtimeVoiceConfig.provider === "none") {
+      onUseCustom(config, ttsConfig, asrConfig);
+      return;
+    }
+    onUseCustom(config, ttsConfig, asrConfig, realtimeVoiceConfig);
   }
 
   const allModelsReady =
@@ -280,14 +325,43 @@ export function OnboardingModal({
               <label>
                 Model
                 {providerMeta.models ? (
-                  <select value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })}>
+                  <select
+                    value={config.model}
+                    onChange={(e) => {
+                      setConfig({ ...config, model: e.target.value });
+                      if (config.provider === "google-live" && realtimeVoiceConfig.provider === "google-live") {
+                        setRealtimeVoiceConfig({ ...realtimeVoiceConfig, model: e.target.value });
+                      }
+                    }}
+                  >
                     {providerMeta.models.map((m) => (
                       <option key={m.id} value={m.id}>{m.label}</option>
                     ))}
                   </select>
                 ) : (
-                  <input value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })} />
+                  <input
+                    value={config.model}
+                    onChange={(e) => {
+                      setConfig({ ...config, model: e.target.value });
+                      if (config.provider === "google-live" && realtimeVoiceConfig.provider === "google-live") {
+                        setRealtimeVoiceConfig({ ...realtimeVoiceConfig, model: e.target.value });
+                      }
+                    }}
+                  />
                 )}
+              </label>
+            )}
+            {config.provider === "google-live" && providerMeta.voices && realtimeVoiceConfig.provider === "google-live" && (
+              <label>
+                Voice
+                <select
+                  value={realtimeVoiceConfig.voice ?? providerMeta.defaultVoice ?? "Kore"}
+                  onChange={(e) => setRealtimeVoiceConfig({ ...realtimeVoiceConfig, voice: e.target.value })}
+                >
+                  {providerMeta.voices.map((voice) => (
+                    <option key={voice.id} value={voice.id}>{voice.label}</option>
+                  ))}
+                </select>
               </label>
             )}
             {showEndpoint && (
@@ -295,18 +369,28 @@ export function OnboardingModal({
                 Endpoint
                 <input
                   value={config.baseUrl ?? providerMeta.defaultBaseUrl ?? ""}
-                  onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
+                  onChange={(e) => {
+                    setConfig({ ...config, baseUrl: e.target.value });
+                    if (config.provider === "google-live" && realtimeVoiceConfig.provider === "google-live") {
+                      setRealtimeVoiceConfig({ ...realtimeVoiceConfig, websocketUrl: e.target.value });
+                    }
+                  }}
                 />
               </label>
             )}
             {showCredential && (
               <label>
-                {config.provider === "openclaw" ? OPENCLAW_GATEWAY_TOKEN_LABEL : "Credential"}
+                {config.provider === "openclaw" ? OPENCLAW_GATEWAY_TOKEN_LABEL : config.provider === "google-live" ? "Google Live credential" : "Credential"}
                 <input
                   aria-label={config.provider === "openclaw" ? OPENCLAW_GATEWAY_TOKEN_LABEL : undefined}
                   type="password"
                   value={config.credential ?? ""}
-                  onChange={(e) => setConfig({ ...config, credential: e.target.value })}
+                  onChange={(e) => {
+                    setConfig({ ...config, credential: e.target.value });
+                    if (config.provider === "google-live" && realtimeVoiceConfig.provider === "google-live") {
+                      setRealtimeVoiceConfig({ ...realtimeVoiceConfig, credential: e.target.value });
+                    }
+                  }}
                   placeholder={
                     config.provider === "openclaw"
                       ? OPENCLAW_GATEWAY_TOKEN_PLACEHOLDER
@@ -328,8 +412,18 @@ export function OnboardingModal({
             >
               {mode === "configure" || SKIP_WELCOME_SCREEN ? "Cancel" : "Back"}
             </button>
-            <button type="button" className="onboarding-primary" onClick={() => setStep("tts")}>
-              Next
+            <button
+              type="button"
+              className="onboarding-primary"
+              onClick={() => {
+                if (config.provider === "google-live") {
+                  handleCustomStart();
+                  return;
+                }
+                setStep("tts");
+              }}
+            >
+              {config.provider === "google-live" ? (mode === "configure" ? "Save" : "Start Liteforms") : "Next"}
             </button>
           </div>
         </div>
@@ -397,7 +491,9 @@ export function OnboardingModal({
                 <input
                   type="password"
                   value={"credential" in ttsConfig ? (ttsConfig.credential ?? "") : ""}
-                  onChange={(e) => setTtsConfig({ ...ttsConfig, credential: e.target.value } as TtsConfig)}
+                  onChange={(e) => {
+                    setTtsConfig({ ...ttsConfig, credential: e.target.value } as TtsConfig);
+                  }}
                   placeholder="Stays local in your browser - we don't see or store this"
                 />
               </label>
@@ -407,7 +503,11 @@ export function OnboardingModal({
             <button type="button" className="onboarding-back" onClick={() => setStep("llm")}>
               Back
             </button>
-            <button type="button" className="onboarding-primary" onClick={() => setStep("stt")}>
+            <button
+              type="button"
+              className="onboarding-primary"
+              onClick={() => setStep("stt")}
+            >
               Next
             </button>
           </div>
