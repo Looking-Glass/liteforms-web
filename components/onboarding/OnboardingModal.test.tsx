@@ -266,7 +266,6 @@ describe("OnboardingModal LLM step", () => {
     goToLlmStep();
     expect(screen.queryByRole("option", { name: /openclaw gateway/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /claude cli/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /openai codex/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /^ollama$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /lm studio/i })).not.toBeInTheDocument();
   });
@@ -277,6 +276,7 @@ describe("OnboardingModal LLM step", () => {
     expect(screen.getByRole("option", { name: /gemma 4 e2b/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /qwen 3\.5 0\.8b/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /anthropic api/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /openai codex/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /openai api/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /google live/i })).toBeInTheDocument();
   });

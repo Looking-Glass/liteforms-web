@@ -66,12 +66,18 @@ describe("LLM_PROVIDER_OPTIONS", () => {
     expect(getAuditedLlmProviderOptions().every((provider) => provider.vercelSupport)).toBe(true);
   });
 
-  it("flags providers that depend on local auth, CLIs, or localhost services as Vercel local-only", () => {
-    expect(LLM_PROVIDER_VERCEL_AUDIT["openai-codex"].support).toBe("local-only");
+  it("flags providers that depend on local CLIs or localhost services as Vercel local-only", () => {
     expect(LLM_PROVIDER_VERCEL_AUDIT["claude-cli"].support).toBe("local-only");
     expect(LLM_PROVIDER_VERCEL_AUDIT.ollama.support).toBe("local-only");
     expect(LLM_PROVIDER_VERCEL_AUDIT.lmstudio.support).toBe("local-only");
     expect(LLM_PROVIDER_VERCEL_AUDIT.openclaw.support).toBe("local-only");
+  });
+
+  it("keeps OpenAI Codex visible in Vercel because it is not a local CLI provider", () => {
+    expect(LLM_PROVIDER_VERCEL_AUDIT["openai-codex"].support).toBe("supported");
+    expect(getVisibleLlmProviderOptions({ isVercelDeployment: true }).map((provider) => provider.id)).toContain(
+      "openai-codex"
+    );
   });
 
   it("keeps browser-local and hosted API providers visible in Vercel deployments", () => {
@@ -80,6 +86,7 @@ describe("LLM_PROVIDER_OPTIONS", () => {
       "browser-local-gemma",
       "browser-local-qwen",
       "anthropic",
+      "openai-codex",
       "openai",
       "google-live"
     ]));
@@ -88,7 +95,6 @@ describe("LLM_PROVIDER_OPTIONS", () => {
   it("hides Vercel local-only providers from Vercel deployments", () => {
     const visibleIds = getVisibleLlmProviderOptions({ isVercelDeployment: true }).map((provider) => provider.id);
     expect(visibleIds).not.toEqual(expect.arrayContaining([
-      "openai-codex",
       "claude-cli",
       "ollama",
       "lmstudio",

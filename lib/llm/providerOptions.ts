@@ -20,7 +20,7 @@ export type LlmProviderOption = {
 };
 
 const VERCEL_LOCAL_ENDPOINT_REASON = "Requires a localhost/private-network service that a Vercel deployment cannot reach.";
-const VERCEL_LOCAL_AUTH_REASON = "Requires local machine auth or CLI state that is not available inside Vercel.";
+const VERCEL_LOCAL_AUTH_REASON = "Requires local machine CLI state that is not available inside Vercel.";
 
 export const GOOGLE_LIVE_MODEL_OPTIONS: ProviderModelOption[] = [
   { id: "gemini-2.5-flash-native-audio-preview-12-2025", label: "Gemini 2.5 Flash Native Audio" },
@@ -274,7 +274,10 @@ export const LLM_PROVIDER_VERCEL_AUDIT = {
   "browser-local-gemma": { support: "supported", reason: "Runs entirely in the user's browser." },
   "browser-local-qwen": { support: "supported", reason: "Runs entirely in the user's browser." },
   openai: { support: "supported", reason: "Uses a hosted API endpoint." },
-  "openai-codex": { support: "local-only", reason: VERCEL_LOCAL_AUTH_REASON },
+  "openai-codex": {
+    support: "supported",
+    reason: "Uses ChatGPT device authorization and the hosted Codex backend; serverless auth persistence may need hardening."
+  },
   anthropic: { support: "supported", reason: "Uses a hosted API endpoint." },
   "claude-cli": { support: "local-only", reason: VERCEL_LOCAL_AUTH_REASON },
   openrouter: { support: "supported", reason: "Uses a hosted API endpoint." },
