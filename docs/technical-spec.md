@@ -14,14 +14,14 @@ The MVP must run primarily in the user's browser. LLM requests must not route th
 
 Available local references:
 
-- `AI-Avatar/`: Unity implementation of Liteforms. Important references include Auth0 login, Looking Glass/Liteforms API clients, character/model/document persistence, Ready Player Me avatar creation, VRM runtime loading, provider-oriented LLM/TTS/STT interfaces, local Kokoro and Whisper sidecars, RAG through document fragments, and OpenClaw/Codex/Claude CLI connectors.
+- `AI-Avatar/`: Unity implementation of Liteforms. Important references include Looking Glass/Liteforms API clients, character/model/document persistence, Ready Player Me avatar creation, VRM runtime loading, provider-oriented LLM/TTS/STT interfaces, local Kokoro and Whisper sidecars, RAG through document fragments, and OpenClaw/Codex/Claude CLI connectors.
 - `openclaw/`: provider connector architecture, model auth concepts, OpenAI/OpenRouter/Ollama/LM Studio/Codex provider implementations, TTS and STT provider examples, memory/RAG implementation. Where provider behavior conflicts across AI-Avatar, OpenRouter, Ollama, LM Studio, Codex, and local Liteforms assumptions, OpenClaw is the implementation gold standard.
 - `kokoro/kokoro.js/`: browser-local Kokoro TTS implementation using Transformers.js / ONNX.
 - `faster-whisper/`: Python/CTranslate2 faster-whisper implementation, used as a behavior reference only. It is not directly browser-runnable. MVP browser STT uses Distil-Whisper ONNX/WebGPU.
 
 AI-Avatar implementation facts:
 
-- User auth is Auth0 through the Looking Glass account system. Unity uses device-code/webview login and refresh-token flows, then calls the Liteforms API with `Authorization: Bearer <accessToken>`.
+- User auth for hosted/internal builds is provider-specific. Unity uses device-code/webview login and refresh-token flows, then calls the Liteforms API with `Authorization: Bearer <accessToken>`.
 - User account/profile data can come from `GET /api/liteforms/usage`-style generated client calls and includes account email, `rpmId`, `rpmToken`, Liteforms characters, and historical usage/analytics. MVP must not gate usage by Liteforms entitlement or tier.
 - Characters are stored through Liteforms API character endpoints, not only local files. Character records include `name`, `description`, `pronouns`, `sceneId`, `voice`, optional `documents` for post-MVP knowledge compatibility, optional `avatar_id`, and `environmentID`.
 - Custom avatars/models are stored through Liteforms model endpoints. VRM upload uses a presigned upload flow: request `models/upload`, upload file to returned `uploadUrl` with returned form fields, then update the model record with URL/upload hash/file metadata and avatar calibration settings.
@@ -165,23 +165,23 @@ Liteforms/
 
 ### 5.1 Backend Strategy
 
-Liteforms Web must use the existing AI-Avatar account identity as the canonical MVP identity. AI-Avatar uses Auth0 through the Looking Glass account system and calls the Liteforms API with bearer access tokens. A user who can log in to AI-Avatar must be able to log in to Liteforms Web with the same account.
+Liteforms Web must use a configured account identity as the canonical MVP identity for hosted builds. AI-Avatar calls the Liteforms API with bearer access tokens. A user who can log in to AI-Avatar must be able to log in to Liteforms Web with the same account when that integration is configured.
 
 MVP backend modes:
 
 - Preferred: use the existing Looking Glass/Liteforms API directly from Next.js server routes.
-- Acceptable fallback: implement a web-owned data layer only where existing API gaps block the MVP, while preserving the same Auth0 user identity and compatibility fields.
-- Do not replace Auth0 with Supabase Auth for MVP unless there is a deliberate migration project.
+- Acceptable fallback: implement a web-owned data layer only where existing API gaps block the MVP, while preserving compatible user identity fields.
+- Do not add a hosted auth provider for MVP unless there is a deliberate integration project.
 
 ### 5.2 Auth Requirements
 
-- Use Auth0/OIDC in the Next.js app.
-- Store the Auth0 session in secure HTTP-only cookies.
+- Use the configured hosted identity provider in the Next.js app.
+- Store hosted auth sessions in secure HTTP-only cookies.
 - Server routes must be able to retrieve a valid access token for the existing Liteforms API.
 - Support refresh-token/session renewal equivalent to AI-Avatar's refresh flow.
 - Expose a typed `LiteformsApiClient` for server calls.
 - Account profile must include:
-  - Auth0 subject / user id.
+  - Hosted auth subject / user id.
   - email.
   - display name.
   - RPM ID and RPM token if present.
@@ -220,7 +220,7 @@ Required API methods:
 
 Post-MVP RAG methods can add `documents.ts`, `fragments.ts`, document CRUD, and `searchFragmentsByPrompt(...)` when knowledge returns to scope.
 
-All browser calls to Liteforms API should go through Next.js server routes so the Auth0 access token is not exposed unnecessarily beyond normal authenticated browser session handling.
+All browser calls to Liteforms API should go through Next.js server routes so hosted access tokens are not exposed unnecessarily beyond normal authenticated browser session handling.
 
 ### 5.4 Credential Storage
 
@@ -577,8 +577,8 @@ interface BrowserLlmProvider {
 - Required MVP provider path for users with ChatGPT subscriptions who do not use OpenClaw.
 - Implement using the same effective approach OpenClaw uses for ChatGPT/Codex subscription access, and keep the configuration model similar to Claude Code OAuth.
 - Match OpenClaw's provider id and label: `openai-codex` / `OpenAI Codex`.
-- Use a local-helper/OAuth-store integration. Liteforms calls its same-origin `/api/llm/local-auth` route, which proxies `status` and `login` to the configured local helper's `/auth/status` and `/auth/login`.
-- Do not show or require an OpenAI API key for this provider. Login is browser OAuth/device pairing handled by the local helper.
+- Use a same-origin `/api/llm/local-auth` route for browser OAuth/device pairing and keep the resulting token server-side.
+- Do not show or require an OpenAI API key for this provider. Chat calls the ChatGPT Codex Responses backend with the OAuth token.
 - Do not require OpenClaw Gateway for this path.
 
 `anthropic`
@@ -593,7 +593,7 @@ interface BrowserLlmProvider {
 - Required MVP provider path for users with Claude/Anthropic subscriptions where OpenClaw supports subscription-style access.
 - Implement using the same effective approach OpenClaw uses for Anthropic subscription access, and keep the configuration model similar to AI-Avatar `ClaudeCodeLLM`.
 - Match OpenClaw's Claude CLI backend naming: `claude-cli` / `Claude CLI`.
-- Use local Claude CLI credential reuse. Liteforms calls its same-origin `/api/llm/local-auth` route, which proxies `status` and `login` to the configured local helper's `/auth/status` and `/auth/login`.
+- Use local Claude CLI credential reuse. Liteforms runs the installed `claude` command server-side with stream-json output and does not require an API key or local HTTP helper.
 - Do not show or require an Anthropic API key for this provider; direct Anthropic API-key access remains the separate `anthropic` provider.
 - Do not require OpenClaw Gateway for this path.
 
@@ -866,12 +866,9 @@ Minimum browser:
 ### 16.1 Vercel
 
 - Next.js App Router deployment.
-- Auth0 / Liteforms API env vars:
-  - `AUTH0_ISSUER_BASE_URL`
-  - `AUTH0_CLIENT_ID`
-  - `AUTH0_CLIENT_SECRET`
-  - `AUTH0_AUDIENCE`
-  - `AUTH0_SECRET`
+- Liteforms API env vars:
+  - `LITEFORMS_API_BASE_URL`
+  - `LITEFORMS_API_ACCESS_TOKEN`
   - `LITEFORMS_API_BASE_URL`
 - Ready Player Me env vars:
   - `READY_PLAYER_ME_SUBDOMAIN`
@@ -897,7 +894,7 @@ Optional:
 
 - Create Next.js TypeScript app in `Liteforms/`.
 - Add lint/test/build setup.
-- Add Auth0 login/session shell.
+- Add hosted login/session shell when a provider is selected.
 - Add Liteforms API client shell.
 - Add design tokens and base layout.
 - Add unauthenticated preset character chat shell.
@@ -1048,7 +1045,7 @@ Manual hardware tests:
 
 ## 19. Open Issues
 
-- Confirm exact production Liteforms API base URL, Auth0 audience, and browser app callback URLs.
+- Confirm exact production Liteforms API base URL, hosted auth audience, and browser app callback URLs.
 - Confirm Ready Player Me commercial/free usage terms for the target deployment and user volume.
 - Verify RPM iframe support for default avatar configuration, theme/styling controls, session restore, and export behavior. If styling is limited, document the MVP constraints.
 - Confirm exact Gemma 4 E2B INT4 ONNX model source, license, browser cache behavior, and minimum viable hardware profile.
@@ -1097,7 +1094,7 @@ Speech/local ML:
 
 Backend:
 
-- Auth0 Next.js SDK or `next-auth` with Auth0 OIDC.
+- Hosted identity SDK or `next-auth` with OIDC.
 - Existing Liteforms API client generated or handwritten from current API schema.
 
 Testing:

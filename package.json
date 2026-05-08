@@ -10,7 +10,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@auth0/nextjs-auth0": "^4.0.0",
     "@huggingface/transformers": "^4.2.0",
     "@lookingglass/webxr": "^0.6.0",
     "@pixiv/three-vrm": "^3.5.2",

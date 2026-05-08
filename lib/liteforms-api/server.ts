@@ -1,22 +1,7 @@
-import { getAuth0Client, hasAuth0Config } from "@/lib/auth0";
 import { LiteformsApiClient } from "./client";
 
 export async function getLiteformsAccessToken() {
-  if (!hasAuth0Config()) {
-    return undefined;
-  }
-
-  try {
-    const auth0 = await getAuth0Client();
-    if (!auth0) {
-      return undefined;
-    }
-
-    const result = await auth0.getAccessToken();
-    return result.token;
-  } catch {
-    return undefined;
-  }
+  return process.env.LITEFORMS_API_ACCESS_TOKEN?.trim() || undefined;
 }
 
 export function createServerLiteformsClient(accessToken: string) {

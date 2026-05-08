@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 import { createLlmAdapter } from "@/lib/llm/adapters";
+import { streamClaudeCliText } from "@/lib/llm/claudeCli";
 import { streamOpenAiCodexResponsesText } from "@/lib/llm/openAiCodexResponses";
 import type { ChatRequest } from "@/lib/llm/types";
 
@@ -8,6 +9,8 @@ export async function POST(request: NextRequest) {
   const source =
     body.config.provider === "openai-codex"
       ? streamOpenAiCodexResponsesText(body, globalThis.fetch)
+      : body.config.provider === "claude-cli"
+        ? streamClaudeCliText(body)
       : createLlmAdapter({ config: body.config, fetch: globalThis.fetch }).streamText(body);
 
   const stream = new ReadableStream({

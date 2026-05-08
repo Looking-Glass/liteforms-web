@@ -442,7 +442,7 @@ export function OnboardingModal({
             )}
             {isClaudeCli && (
               <div className="provider-note" role="note">
-                Claude CLI reuses your local Claude CLI login. Run claude auth login in a terminal if the local helper is not already authenticated.
+                Claude CLI reuses your local Claude CLI login. Run claude auth login in a terminal if Claude is not already authenticated.
               </div>
             )}
             {localAuthProvider && localAuthCopy && (
@@ -460,9 +460,11 @@ export function OnboardingModal({
                   <button type="button" className="onboarding-secondary" disabled={localAuthBusy} onClick={() => requestLocalAuth("status")}>
                     {localAuthBusy ? localAuthCopy.checking : "Check sign-in"}
                   </button>
-                  <button type="button" className="onboarding-primary" disabled={localAuthBusy} onClick={() => requestLocalAuth("login")}>
-                    {localAuthBusy ? localAuthCopy.checking : localAuthCopy.login}
-                  </button>
+                  {localAuthProvider !== "claude-cli" && (
+                    <button type="button" className="onboarding-primary" disabled={localAuthBusy} onClick={() => requestLocalAuth("login")}>
+                      {localAuthBusy ? localAuthCopy.checking : localAuthCopy.login}
+                    </button>
+                  )}
                 </div>
               </div>
             )}

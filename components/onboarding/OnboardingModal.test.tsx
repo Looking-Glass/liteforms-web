@@ -747,6 +747,8 @@ describe("OnboardingModal LLM model selection", () => {
     goToLlmAndSelectProvider("claude-cli");
     expect(screen.queryByLabelText("Credential")).not.toBeInTheDocument();
     expect(screen.getByText(/reuses your local Claude CLI login/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /check sign-in/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /check claude cli login/i })).not.toBeInTheDocument();
   });
 
   // ── Config integration ────────────────────────────────────────────────────

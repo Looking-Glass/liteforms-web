@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { resolveClaudeCliStatus } from "@/lib/llm/claudeCli";
 import {
   pollOpenAiCodexDevicePairing,
   requestOpenAiCodexDevicePairing
@@ -18,11 +19,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(await handleOpenAiCodexAuth(body.action));
     }
     if (body.provider === "claude-cli") {
-      return NextResponse.json({
-        provider: "claude-cli",
-        authenticated: false,
-        message: "Claude CLI local probing is not embedded yet. Run claude auth login, then use a Claude CLI helper when available."
-      });
+      return NextResponse.json(await handleClaudeCliAuth(body.action));
     }
     const result =
       body.action === "status"
@@ -42,6 +39,18 @@ export async function POST(request: NextRequest) {
       { status: 502 }
     );
   }
+}
+
+async function handleClaudeCliAuth(action: "status" | "login") {
+  if (action === "login") {
+    return {
+      provider: "claude-cli" as const,
+      authenticated: false,
+      source: "Claude CLI",
+      message: "Run claude auth login in a terminal. Liteforms will reuse that local Claude CLI login."
+    };
+  }
+  return await resolveClaudeCliStatus();
 }
 
 async function handleOpenAiCodexAuth(action: "status" | "login") {
