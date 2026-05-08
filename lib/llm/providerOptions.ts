@@ -9,11 +9,18 @@ export type LlmProviderOption = {
   defaultModel: string;
   defaultBaseUrl?: string;
   defaultVoice?: string;
+  /** Whether this provider is expected to work from a hosted Vercel deployment. */
+  vercelSupport?: "supported" | "local-only";
+  /** Public-facing note for local-only providers hidden from Vercel deployments. */
+  vercelUnsupportedReason?: string;
   /** Known model list. When present a <select> dropdown is rendered; otherwise a free-text <input>. */
   models?: ProviderModelOption[];
   /** Known realtime voice list. Currently used by Google Live. */
   voices?: ProviderVoiceOption[];
 };
+
+const VERCEL_LOCAL_ENDPOINT_REASON = "Requires a localhost/private-network service that a Vercel deployment cannot reach.";
+const VERCEL_LOCAL_AUTH_REASON = "Requires local machine auth or CLI state that is not available inside Vercel.";
 
 export const GOOGLE_LIVE_MODEL_OPTIONS: ProviderModelOption[] = [
   { id: "gemini-2.5-flash-native-audio-preview-12-2025", label: "Gemini 2.5 Flash Native Audio" },
@@ -262,6 +269,50 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
     models: [{ id: "onnx-community/gemma-4-E2B-it-ONNX", label: "Gemma 4 E2B (browser)" }]
   }
 ];
+
+export const LLM_PROVIDER_VERCEL_AUDIT = {
+  "browser-local-gemma": { support: "supported", reason: "Runs entirely in the user's browser." },
+  "browser-local-qwen": { support: "supported", reason: "Runs entirely in the user's browser." },
+  openai: { support: "supported", reason: "Uses a hosted API endpoint." },
+  "openai-codex": { support: "local-only", reason: VERCEL_LOCAL_AUTH_REASON },
+  anthropic: { support: "supported", reason: "Uses a hosted API endpoint." },
+  "claude-cli": { support: "local-only", reason: VERCEL_LOCAL_AUTH_REASON },
+  openrouter: { support: "supported", reason: "Uses a hosted API endpoint." },
+  ollama: { support: "local-only", reason: VERCEL_LOCAL_ENDPOINT_REASON },
+  lmstudio: { support: "local-only", reason: VERCEL_LOCAL_ENDPOINT_REASON },
+  openclaw: { support: "local-only", reason: VERCEL_LOCAL_ENDPOINT_REASON },
+  google: { support: "supported", reason: "Uses a hosted API endpoint." },
+  "google-live": { support: "supported", reason: "Uses Google's hosted realtime endpoint from the browser." },
+  xai: { support: "supported", reason: "Uses a hosted API endpoint." },
+  mistral: { support: "supported", reason: "Uses a hosted API endpoint." },
+  cerebras: { support: "supported", reason: "Uses a hosted API endpoint." },
+  nvidia: { support: "supported", reason: "Uses a hosted API endpoint." },
+  groq: { support: "supported", reason: "Uses a hosted API endpoint." },
+  together: { support: "supported", reason: "Uses a hosted API endpoint." },
+  fireworks: { support: "supported", reason: "Uses a hosted API endpoint." },
+  qwen: { support: "supported", reason: "Uses a hosted API endpoint." }
+} satisfies Record<LlmProviderId, { support: "supported" | "local-only"; reason: string }>;
+
+export function getAuditedLlmProviderOptions(): LlmProviderOption[] {
+  return LLM_PROVIDER_OPTIONS.map((provider) => {
+    const audit = LLM_PROVIDER_VERCEL_AUDIT[provider.id];
+    return {
+      ...provider,
+      vercelSupport: audit.support,
+      ...(audit.support === "local-only" ? { vercelUnsupportedReason: audit.reason } : {})
+    };
+  });
+}
+
+export function getVisibleLlmProviderOptions({ isVercelDeployment }: { isVercelDeployment: boolean }) {
+  const options = getAuditedLlmProviderOptions();
+  if (!isVercelDeployment) return options;
+  return options.filter((provider) => provider.vercelSupport !== "local-only");
+}
+
+export function isVercelDeploymentFromEnv() {
+  return process.env.NEXT_PUBLIC_LITEFORMS_VERCEL_DEPLOYMENT === "1";
+}
 
 /** Provider IDs that require an API key or credential. */
 export const CREDENTIAL_PROVIDER_IDS: LlmProviderId[] = [

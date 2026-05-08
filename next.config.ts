@@ -3,6 +3,9 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  env: {
+    NEXT_PUBLIC_LITEFORMS_VERCEL_DEPLOYMENT: process.env.VERCEL === "1" ? "1" : "0"
+  },
   // Required for WebXR / SharedArrayBuffer used by the Looking Glass polyfill
   async headers() {
     return [

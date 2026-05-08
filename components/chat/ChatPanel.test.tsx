@@ -118,7 +118,7 @@ describe("ChatPanel collapsible sections", () => {
         voice: "Kore"
       }
     });
-    expect(screen.getByRole("button", { name: /start google live/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /start google live/i })).toHaveLength(2);
   });
 });
 

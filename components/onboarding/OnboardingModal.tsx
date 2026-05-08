@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { getDefaultProviderConfig } from "@/lib/llm";
 import type { BaseProviderConfig, LlmProviderId } from "@/lib/llm";
-import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
+import { CREDENTIAL_PROVIDER_IDS, getVisibleLlmProviderOptions, isVercelDeploymentFromEnv } from "@/lib/llm/providerOptions";
 import type { AsrConfig, AsrProviderId, RealtimeVoiceConfig, TtsConfig, TtsProviderId } from "@/lib/speech";
 import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import { updateEndpointMode } from "@/components/chat/chatPanelUtils";
@@ -33,9 +33,10 @@ export type OnboardingModalProps = {
   initialTtsConfig?: TtsConfig;
   initialAsrConfig?: AsrConfig;
   initialRealtimeVoiceConfig?: RealtimeVoiceConfig;
+  /** Test seam for deployment-specific provider filtering; production derives this from Next/Vercel env. */
+  isVercelDeployment?: boolean;
 };
 
-const llmProviderOptions = LLM_PROVIDER_OPTIONS;
 const credentialProviders = CREDENTIAL_PROVIDER_IDS;
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
@@ -60,30 +61,37 @@ export function OnboardingModal({
   initialLlmConfig,
   initialTtsConfig,
   initialAsrConfig,
-  initialRealtimeVoiceConfig
+  initialRealtimeVoiceConfig,
+  isVercelDeployment = isVercelDeploymentFromEnv()
 }: OnboardingModalProps) {
+  const llmProviderOptions = getVisibleLlmProviderOptions({ isVercelDeployment });
+  const defaultInitialConfig: BaseProviderConfig = {
+    provider: "anthropic",
+    model: "claude-opus-4-7",
+    baseUrl: "https://api.anthropic.com",
+    endpointMode: "native"
+  };
+  const visibleInitialLlmConfig =
+    initialLlmConfig && llmProviderOptions.some((provider) => provider.id === initialLlmConfig.provider)
+      ? initialLlmConfig
+      : undefined;
   const [step, setStep] = useState<OnboardingStep>(
     mode === "configure" || SKIP_WELCOME_SCREEN ? "llm" : "welcome"
   );
   const [config, setConfig] = useState<BaseProviderConfig>(
-    initialLlmConfig ?? {
-      provider: "anthropic",
-      model: "claude-opus-4-7",
-      baseUrl: "https://api.anthropic.com",
-      endpointMode: "native"
-    }
+    visibleInitialLlmConfig ?? defaultInitialConfig
   );
   const [ttsConfig, setTtsConfig] = useState<TtsConfig>(initialTtsConfig ?? { provider: "kokoro" });
   const [asrConfig, setAsrConfig] = useState<AsrConfig>(initialAsrConfig ?? { provider: "distil-whisper" });
   const [realtimeVoiceConfig, setRealtimeVoiceConfig] = useState<RealtimeVoiceConfig>(
     initialRealtimeVoiceConfig ??
-      (initialLlmConfig?.provider === "google-live"
+      (visibleInitialLlmConfig?.provider === "google-live"
         ? {
             provider: "google-live",
-            credential: initialLlmConfig.credential,
-            model: initialLlmConfig.model,
+            credential: visibleInitialLlmConfig.credential,
+            model: visibleInitialLlmConfig.model,
             voice: "Kore",
-            websocketUrl: initialLlmConfig.baseUrl
+            websocketUrl: visibleInitialLlmConfig.baseUrl
           }
         : { provider: "none" })
   );

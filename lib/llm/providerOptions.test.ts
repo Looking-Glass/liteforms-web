@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "./providerOptions";
+import {
+  CREDENTIAL_PROVIDER_IDS,
+  getAuditedLlmProviderOptions,
+  getVisibleLlmProviderOptions,
+  LLM_PROVIDER_OPTIONS,
+  LLM_PROVIDER_VERCEL_AUDIT
+} from "./providerOptions";
 
 describe("LLM_PROVIDER_OPTIONS", () => {
   it("matches OpenClaw's ChatGPT subscription provider naming", () => {
@@ -51,5 +57,48 @@ describe("LLM_PROVIDER_OPTIONS", () => {
     expect(option?.voices?.length).toBe(30);
     expect(option?.voices?.map((voice) => voice.id)).toEqual(expect.arrayContaining(["Kore", "Aoede", "Zephyr"]));
     expect(CREDENTIAL_PROVIDER_IDS).toContain("google-live");
+  });
+
+  it("audits every provider for Vercel deployment support", () => {
+    expect(Object.keys(LLM_PROVIDER_VERCEL_AUDIT).sort()).toEqual(
+      LLM_PROVIDER_OPTIONS.map((provider) => provider.id).sort()
+    );
+    expect(getAuditedLlmProviderOptions().every((provider) => provider.vercelSupport)).toBe(true);
+  });
+
+  it("flags providers that depend on local auth, CLIs, or localhost services as Vercel local-only", () => {
+    expect(LLM_PROVIDER_VERCEL_AUDIT["openai-codex"].support).toBe("local-only");
+    expect(LLM_PROVIDER_VERCEL_AUDIT["claude-cli"].support).toBe("local-only");
+    expect(LLM_PROVIDER_VERCEL_AUDIT.ollama.support).toBe("local-only");
+    expect(LLM_PROVIDER_VERCEL_AUDIT.lmstudio.support).toBe("local-only");
+    expect(LLM_PROVIDER_VERCEL_AUDIT.openclaw.support).toBe("local-only");
+  });
+
+  it("keeps browser-local and hosted API providers visible in Vercel deployments", () => {
+    const visibleIds = getVisibleLlmProviderOptions({ isVercelDeployment: true }).map((provider) => provider.id);
+    expect(visibleIds).toEqual(expect.arrayContaining([
+      "browser-local-gemma",
+      "browser-local-qwen",
+      "anthropic",
+      "openai",
+      "google-live"
+    ]));
+  });
+
+  it("hides Vercel local-only providers from Vercel deployments", () => {
+    const visibleIds = getVisibleLlmProviderOptions({ isVercelDeployment: true }).map((provider) => provider.id);
+    expect(visibleIds).not.toEqual(expect.arrayContaining([
+      "openai-codex",
+      "claude-cli",
+      "ollama",
+      "lmstudio",
+      "openclaw"
+    ]));
+  });
+
+  it("keeps all providers visible when running outside Vercel", () => {
+    expect(getVisibleLlmProviderOptions({ isVercelDeployment: false }).map((provider) => provider.id)).toEqual(
+      LLM_PROVIDER_OPTIONS.map((provider) => provider.id)
+    );
   });
 });

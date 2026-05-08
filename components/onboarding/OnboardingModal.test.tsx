@@ -25,6 +25,7 @@ function renderModal(overrides: {
   onUseCustom?: (...args: unknown[]) => void;
   onClose?: () => void;
   localModelLoadState?: LocalModelLoadState[];
+  isVercelDeployment?: boolean;
 } = {}) {
   const onUseBuiltIn = overrides.onUseBuiltIn ?? vi.fn();
   const onUseCustom = overrides.onUseCustom ?? vi.fn();
@@ -36,6 +37,7 @@ function renderModal(overrides: {
       onUseCustom={onUseCustom}
       onClose={onClose}
       localModelLoadState={localModelLoadState}
+      isVercelDeployment={overrides.isVercelDeployment}
     />
   );
   return { onUseBuiltIn, onUseCustom, onClose };
@@ -257,6 +259,26 @@ describe("OnboardingModal LLM step", () => {
     renderModal();
     goToLlmStep();
     expect(screen.getByRole("combobox", { name: /model provider/i })).toBeInTheDocument();
+  });
+
+  it("hides local-only LLM providers in Vercel deployments", () => {
+    renderModal({ isVercelDeployment: true });
+    goToLlmStep();
+    expect(screen.queryByRole("option", { name: /openclaw gateway/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /claude cli/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /openai codex/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /^ollama$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /lm studio/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps browser-local and hosted LLM providers visible in Vercel deployments", () => {
+    renderModal({ isVercelDeployment: true });
+    goToLlmStep();
+    expect(screen.getByRole("option", { name: /gemma 4 e2b/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /qwen 3\.5 0\.8b/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /anthropic api/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /openai api/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /google live/i })).toBeInTheDocument();
   });
 
   it("defaults to Anthropic API (anthropic)", () => {
