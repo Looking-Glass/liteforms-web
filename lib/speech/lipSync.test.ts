@@ -20,5 +20,12 @@ describe("lip sync", () => {
   it("creates an RMS fallback mouth-open frame", () => {
     expect(createRmsLipSyncFrame(0.6)).toEqual({ target: "viseme_aa", group: "A", vrmExpression: "aa", weight: 0.6 });
     expect(createRmsLipSyncFrame(4)).toEqual({ target: "viseme_aa", group: "A", vrmExpression: "aa", weight: 1 });
+    expect(createRmsLipSyncFrame(4, { maxWeight: 1.8, preferMorphTarget: true })).toEqual({
+      target: "viseme_aa",
+      group: "A",
+      vrmExpression: "aa",
+      weight: 1.8,
+      preferMorphTarget: true
+    });
   });
 });

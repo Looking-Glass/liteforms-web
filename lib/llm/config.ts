@@ -5,9 +5,9 @@ const defaultBaseUrls = {
   "browser-local-gemma": undefined,
   "browser-local-qwen": undefined,
   openai: "https://api.openai.com/v1",
-  "chatgpt-subscription": "http://127.0.0.1:1455",
+  "openai-codex": "https://chatgpt.com/backend-api/codex",
   anthropic: "https://api.anthropic.com",
-  "claude-subscription": "http://127.0.0.1:1456",
+  "claude-cli": "http://127.0.0.1:1456",
   openrouter: "https://openrouter.ai/api/v1",
   ollama: "http://localhost:11434",
   lmstudio: "http://localhost:1234/v1",
@@ -28,9 +28,9 @@ const defaultEndpointModes = {
   "browser-local-gemma": "native",
   "browser-local-qwen": "native",
   openai: "openai-compatible",
-  "chatgpt-subscription": "openai-compatible",
+  "openai-codex": "openai-compatible",
   anthropic: "native",
-  "claude-subscription": "openai-compatible",
+  "claude-cli": "openai-compatible",
   openrouter: "openai-compatible",
   ollama: "native",
   lmstudio: "openai-compatible",
@@ -48,16 +48,34 @@ const defaultEndpointModes = {
 } satisfies Record<BaseProviderConfig["provider"], NonNullable<BaseProviderConfig["endpointMode"]>>;
 
 const liteformsProxyPattern = /(^\/api\/|liteforms\/llm|\/api\/liteforms|\/api\/llm)/i;
+const legacyProviderIds = {
+  "chatgpt-subscription": "openai-codex",
+  "claude-subscription": "claude-cli"
+} as const;
+
+function migrateLegacyProviderId(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return input;
+  }
+  const provider = (input as { provider?: unknown }).provider;
+  if (provider !== "chatgpt-subscription" && provider !== "claude-subscription") {
+    return input;
+  }
+  return {
+    ...input,
+    provider: legacyProviderIds[provider]
+  };
+}
 
 export const providerConfigSchema = z
-  .object({
+  .preprocess(migrateLegacyProviderId, z.object({
     provider: z.enum([
       "browser-local-gemma",
       "browser-local-qwen",
       "openai",
-      "chatgpt-subscription",
+      "openai-codex",
       "anthropic",
-      "claude-subscription",
+      "claude-cli",
       "openrouter",
       "ollama",
       "lmstudio",
@@ -77,7 +95,7 @@ export const providerConfigSchema = z
     credential: z.string().optional(),
     baseUrl: z.string().trim().optional(),
     endpointMode: z.enum(["native", "openai-compatible"]).optional()
-  })
+  }))
   .transform((config) => ({
     ...config,
     baseUrl: config.baseUrl ?? defaultBaseUrls[config.provider],
@@ -114,9 +132,9 @@ export function getProviderLabel(provider: BaseProviderConfig["provider"]) {
     "browser-local-gemma": "Browser local (Gemma)",
     "browser-local-qwen": "Browser local (Qwen)",
     openai: "OpenAI API",
-    "chatgpt-subscription": "ChatGPT connector",
+    "openai-codex": "OpenAI Codex",
     anthropic: "Anthropic API",
-    "claude-subscription": "Claude connector",
+    "claude-cli": "Claude CLI",
     openrouter: "OpenRouter",
     ollama: "Ollama",
     lmstudio: "LM Studio",

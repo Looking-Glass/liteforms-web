@@ -305,13 +305,13 @@ describe("new TTS adapters", () => {
   }
 
   it("calls OpenAI TTS with Bearer auth at /audio/speech endpoint", async () => {
-    const fetchMock = mockFetch(async () => audioResponse());
+    const fetchMock = mockFetch(async () => new Response(new ArrayBuffer(4), { headers: { "content-type": "audio/pcm" } }));
     const adapter = createTtsAdapter({
       config: { provider: "openai", credential: "sk-key", voice: "coral" },
       fetch: fetchMock
     });
 
-    await adapter.synthesize("Hello");
+    const result = await adapter.synthesize("Hello");
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.openai.com/v1/audio/speech",
       expect.objectContaining({
@@ -321,7 +321,14 @@ describe("new TTS adapters", () => {
     );
     const { init } = firstFetchCall(fetchMock);
     const body = JSON.parse(init.body as string);
-    expect(body).toMatchObject({ model: "gpt-4o-mini-tts", input: "Hello", voice: "coral" });
+    expect(body).toMatchObject({ model: "gpt-4o-mini-tts", input: "Hello", voice: "coral", response_format: "pcm" });
+    expect(result).toMatchObject({
+      mimeType: "audio/pcm",
+      sampleRate: 24000,
+      lipSyncGain: 1.6,
+      lipSyncMaxWeight: 1.8,
+      lipSyncPreferMorphTarget: true
+    });
   });
 
   it("OpenAI TTS includes speed and instructions only when configured", async () => {

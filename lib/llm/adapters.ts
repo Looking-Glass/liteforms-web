@@ -60,6 +60,9 @@ function shouldProxyBrowserRequest(provider: string) {
   if (CLOUD_PROVIDER_IDS.has(provider)) {
     return true;
   }
+  if (provider === "openai-codex" || provider === "claude-cli") {
+    return true;
+  }
   return provider === "openclaw" && isLocalAppOrigin();
 }
 
@@ -75,7 +78,8 @@ async function* streamViaProxy(request: ChatRequest, fetchImpl: FetchLike): Asyn
     body: JSON.stringify(request)
   });
   if (!response.ok) {
-    throw new Error(`LLM proxy request failed with ${response.status}`);
+    const detail = await response.text().catch(() => "");
+    throw new Error(detail.trim() || `LLM proxy request failed with ${response.status}`);
   }
   if (!response.body) return;
   const reader = response.body.getReader();
@@ -230,7 +234,7 @@ function formatProviderResponseError(response: Response, config: BaseProviderCon
 
 export function providerNeedsCredential(config: BaseProviderConfig) {
   return [
-    "openai", "chatgpt-subscription", "anthropic", "claude-subscription", "openrouter", "openclaw",
+    "openai", "anthropic", "openrouter", "openclaw",
     "google", "google-live", "xai", "mistral", "cerebras", "nvidia", "groq", "together", "fireworks", "qwen"
   ].includes(config.provider);
 }

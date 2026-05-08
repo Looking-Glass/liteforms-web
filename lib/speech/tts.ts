@@ -403,9 +403,18 @@ async function synthesizeDeepgram(
 
 async function synthesizeOpenAiCompatible(
   text: string,
-  config: { credential: string; baseUrl: string; model: string; voice: string; speed?: number; instructions?: string },
+  config: {
+    credential: string;
+    baseUrl: string;
+    model: string;
+    voice: string;
+    speed?: number;
+    instructions?: string;
+    responseFormat?: "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
+  },
   fetchImpl: FetchLike
 ): Promise<TtsResult> {
+  const responseFormat = config.responseFormat;
   const response = await fetchImpl(`${trimSlash(config.baseUrl)}/audio/speech`, {
     method: "POST",
     headers: {
@@ -417,10 +426,22 @@ async function synthesizeOpenAiCompatible(
       input: text,
       voice: config.voice,
       ...(config.speed != null && { speed: config.speed }),
-      ...(config.instructions?.trim() && { instructions: config.instructions })
+      ...(config.instructions?.trim() && { instructions: config.instructions }),
+      ...(responseFormat && { response_format: responseFormat })
     })
   });
-  return audioResponse(response);
+  const result = await audioResponse(response);
+  if (responseFormat === "pcm") {
+    return {
+      ...result,
+      mimeType: "audio/pcm",
+      sampleRate: 24000,
+      lipSyncGain: 1.6,
+      lipSyncMaxWeight: 1.8,
+      lipSyncPreferMorphTarget: true
+    };
+  }
+  return result;
 }
 
 // ── Google Gemini TTS ──────────────────────────────────────────────────────────

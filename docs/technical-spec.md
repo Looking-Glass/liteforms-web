@@ -572,11 +572,13 @@ interface BrowserLlmProvider {
 - Must be able to target OpenClaw's OpenAI, OpenAI-Codex, OpenRouter, Ollama, LM Studio, and Anthropic-backed models through the gateway when exposed by that gateway.
 - When a character is configured to use OpenClaw, do not build or inject the default AI-Avatar persona system prompt. OpenClaw agents already carry personality and instructions.
 
-`codex/chatgpt-subscription`
+`openai-codex`
 
 - Required MVP provider path for users with ChatGPT subscriptions who do not use OpenClaw.
 - Implement using the same effective approach OpenClaw uses for ChatGPT/Codex subscription access, and keep the configuration model similar to Claude Code OAuth.
-- Prefer a local-helper/OAuth-store integration where direct browser OAuth is not practical.
+- Match OpenClaw's provider id and label: `openai-codex` / `OpenAI Codex`.
+- Use a local-helper/OAuth-store integration. Liteforms calls its same-origin `/api/llm/local-auth` route, which proxies `status` and `login` to the configured local helper's `/auth/status` and `/auth/login`.
+- Do not show or require an OpenAI API key for this provider. Login is browser OAuth/device pairing handled by the local helper.
 - Do not require OpenClaw Gateway for this path.
 
 `anthropic`
@@ -586,11 +588,13 @@ interface BrowserLlmProvider {
 - Use Messages API SSE streaming.
 - Browser credential store holds the Anthropic API key.
 
-`anthropic/claude-subscription`
+`claude-cli`
 
 - Required MVP provider path for users with Claude/Anthropic subscriptions where OpenClaw supports subscription-style access.
 - Implement using the same effective approach OpenClaw uses for Anthropic subscription access, and keep the configuration model similar to AI-Avatar `ClaudeCodeLLM`.
-- Prefer a local-helper/OAuth-store integration where direct browser OAuth is not practical.
+- Match OpenClaw's Claude CLI backend naming: `claude-cli` / `Claude CLI`.
+- Use local Claude CLI credential reuse. Liteforms calls its same-origin `/api/llm/local-auth` route, which proxies `status` and `login` to the configured local helper's `/auth/status` and `/auth/login`.
+- Do not show or require an Anthropic API key for this provider; direct Anthropic API-key access remains the separate `anthropic` provider.
 - Do not require OpenClaw Gateway for this path.
 
 ### 9.3 Post-MVP Providers

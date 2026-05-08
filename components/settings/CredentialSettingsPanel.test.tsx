@@ -110,4 +110,14 @@ describe("CredentialSettingsPanel provider dropdown", () => {
     render(<CredentialSettingsPanel />);
     expect(screen.queryByRole("option", { name: /gemma in browser/i })).not.toBeInTheDocument();
   });
+
+  it("does not include OpenAI Codex because it uses local auth", () => {
+    render(<CredentialSettingsPanel />);
+    expect(screen.queryByRole("option", { name: /openai codex/i })).not.toBeInTheDocument();
+  });
+
+  it("does not include Claude CLI because it reuses local auth", () => {
+    render(<CredentialSettingsPanel />);
+    expect(screen.queryByRole("option", { name: /claude cli/i })).not.toBeInTheDocument();
+  });
 });

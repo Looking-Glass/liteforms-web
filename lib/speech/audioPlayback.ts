@@ -54,7 +54,7 @@ async function playSourceWithLipSync(source: AudioBufferSourceNode, context: Aud
   if (result.words?.length) {
     stopRmsFallback = connectWordTimingLipSync(source, context, result, options, playbackStartTime);
   } else {
-    stopRmsFallback = connectRmsFallback(source, context, options.onLipSyncFrame);
+    stopRmsFallback = connectRmsFallback(source, context, result, options.onLipSyncFrame);
   }
 
   await playSource(source, playbackStartTime);
@@ -96,10 +96,12 @@ function connectWordTimingLipSync(
     if (activeFrame) {
       options.onLipSyncFrame?.({
         ...activeFrame,
-        weight: calculateVisemeWeight(rms)
+        weight: calculateVisemeWeight(rms, result.lipSyncGain, result.lipSyncMaxWeight)
       });
     } else if (rms > 0.015) {
-      options.onLipSyncFrame?.(createRmsLipSyncFrame(calculateVisemeWeight(rms)));
+      options.onLipSyncFrame?.(
+        createRmsLipSyncFrame(calculateVisemeWeight(rms, result.lipSyncGain, result.lipSyncMaxWeight), getRmsLipSyncFrameOptions(result))
+      );
     }
 
     window.requestAnimationFrame(update);
@@ -113,7 +115,12 @@ function connectWordTimingLipSync(
   };
 }
 
-function connectRmsFallback(source: AudioBufferSourceNode, context: AudioContext, onLipSyncFrame?: (frame: RmsLipSyncFrame) => void) {
+function connectRmsFallback(
+  source: AudioBufferSourceNode,
+  context: AudioContext,
+  result: Pick<TtsResult, "lipSyncGain" | "lipSyncMaxWeight" | "lipSyncPreferMorphTarget">,
+  onLipSyncFrame?: (frame: RmsLipSyncFrame) => void
+) {
   if (!onLipSyncFrame) {
     source.connect(context.destination);
     return undefined;
@@ -132,7 +139,12 @@ function connectRmsFallback(source: AudioBufferSourceNode, context: AudioContext
     }
 
     analyser.getByteTimeDomainData(samples);
-    onLipSyncFrame(createRmsLipSyncFrame(calculateVisemeWeight(calculateRms(samples))));
+    onLipSyncFrame(
+      createRmsLipSyncFrame(
+        calculateVisemeWeight(calculateRms(samples), result.lipSyncGain, result.lipSyncMaxWeight),
+        getRmsLipSyncFrameOptions(result)
+      )
+    );
     window.requestAnimationFrame(update);
   };
 
@@ -153,8 +165,15 @@ function calculateRms(samples: Uint8Array) {
   return Math.sqrt(sum / samples.length);
 }
 
-function calculateVisemeWeight(rms: number) {
-  return clamp((rms - 0.01) / 0.18, 0, 1);
+function calculateVisemeWeight(rms: number, gain = 1, maxWeight = 1) {
+  return clamp((rms * gain - 0.01) / 0.18, 0, maxWeight);
+}
+
+function getRmsLipSyncFrameOptions(result: Pick<TtsResult, "lipSyncMaxWeight" | "lipSyncPreferMorphTarget">) {
+  return {
+    maxWeight: result.lipSyncMaxWeight,
+    preferMorphTarget: result.lipSyncPreferMorphTarget
+  };
 }
 
 function getActiveVisemeFrame(frames: VisemeFrame[], playbackTime: number) {

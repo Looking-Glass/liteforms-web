@@ -17,6 +17,7 @@ export type RmsLipSyncFrame = {
   group: "A";
   vrmExpression: "aa";
   weight: number;
+  preferMorphTarget?: boolean;
 };
 
 const leadingPhonemeTargets: Array<[RegExp, string]> = [
@@ -48,8 +49,14 @@ export function mapWordTimingsToVisemes(words: WordTiming[]): VisemeFrame[] {
   });
 }
 
-export function createRmsLipSyncFrame(rms: number): RmsLipSyncFrame {
-  return { target: "viseme_aa", group: "A", vrmExpression: "aa", weight: clamp(rms, 0, 1) };
+export function createRmsLipSyncFrame(rms: number, options: { maxWeight?: number; preferMorphTarget?: boolean } = {}): RmsLipSyncFrame {
+  return {
+    target: "viseme_aa",
+    group: "A",
+    vrmExpression: "aa",
+    weight: clamp(rms, 0, options.maxWeight ?? 1),
+    ...(options.preferMorphTarget ? { preferMorphTarget: true } : {})
+  };
 }
 
 export function inferRpmVisemeTarget(word: string) {

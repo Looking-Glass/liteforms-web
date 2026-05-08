@@ -64,8 +64,8 @@ describe("updateEndpointMode", () => {
     expect(updateEndpointMode("openai")).toBe("openai-compatible");
     expect(updateEndpointMode("anthropic")).toBe("openai-compatible");
     expect(updateEndpointMode("openrouter")).toBe("openai-compatible");
-    expect(updateEndpointMode("chatgpt-subscription")).toBe("openai-compatible");
-    expect(updateEndpointMode("claude-subscription")).toBe("openai-compatible");
+    expect(updateEndpointMode("openai-codex")).toBe("openai-compatible");
+    expect(updateEndpointMode("claude-cli")).toBe("openai-compatible");
     expect(updateEndpointMode("lmstudio")).toBe("openai-compatible");
     expect(updateEndpointMode("openclaw")).toBe("openai-compatible");
   });

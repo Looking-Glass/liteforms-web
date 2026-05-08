@@ -13,6 +13,7 @@ import {
   OPENCLAW_GATEWAY_TOKEN_LABEL,
   OPENCLAW_GATEWAY_TOKEN_PLACEHOLDER
 } from "@/lib/llm/openclawSetup";
+import { defaultLocalAuthMethod, getLocalAuthCopy, type LocalAuthLoginResult, type LocalAuthProviderId } from "@/lib/llm/localAuth";
 import type { LocalModelLoadState } from "@/components/chat/ChatPanel";
 
 type OnboardingStep = "welcome" | "llm" | "tts" | "stt" | "loading";
@@ -86,6 +87,9 @@ export function OnboardingModal({
           }
         : { provider: "none" })
   );
+  const [localAuthStatus, setLocalAuthStatus] = useState<LocalAuthLoginResult | null>(null);
+  const [localAuthBusy, setLocalAuthBusy] = useState(false);
+  const [localAuthError, setLocalAuthError] = useState("");
 
   function updateLlmProvider(providerId: LlmProviderId) {
     const option = llmProviderOptions.find((p) => p.id === providerId) ?? llmProviderOptions[0];
@@ -108,6 +112,8 @@ export function OnboardingModal({
       return;
     }
     setRealtimeVoiceConfig({ provider: "none" });
+    setLocalAuthStatus(null);
+    setLocalAuthError("");
     setConfig({
       provider: option.id,
       model: option.defaultModel,
@@ -192,6 +198,10 @@ export function OnboardingModal({
   const providerMeta = llmProviderOptions.find((p) => p.id === config.provider) ?? llmProviderOptions[0];
   const showEndpoint = config.provider !== "browser-local-gemma" && config.provider !== "browser-local-qwen";
   const showCredential = credentialProviders.includes(config.provider);
+  const isOpenAiCodex = config.provider === "openai-codex";
+  const isClaudeCli = config.provider === "claude-cli";
+  const localAuthProvider: LocalAuthProviderId | null = isOpenAiCodex ? "openai-codex" : isClaudeCli ? "claude-cli" : null;
+  const localAuthCopy = localAuthProvider ? getLocalAuthCopy(localAuthProvider) : null;
 
   const ttsMeta = TTS_PROVIDER_OPTIONS.find((p) => p.id === ttsConfig.provider) ?? TTS_PROVIDER_OPTIONS[0];
   const sttMeta = STT_PROVIDER_OPTIONS.find((p) => p.id === asrConfig.provider) ?? STT_PROVIDER_OPTIONS[0];
@@ -231,6 +241,36 @@ export function OnboardingModal({
 
   function setSttModel(model: string) {
     setAsrConfig({ ...asrConfig, model } as AsrConfig);
+  }
+
+  async function requestLocalAuth(action: "status" | "login") {
+    if (!localAuthProvider || !config.baseUrl) return;
+    setLocalAuthBusy(true);
+    setLocalAuthError("");
+    try {
+      const response = await fetch("/api/llm/local-auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          provider: localAuthProvider,
+          baseUrl: config.baseUrl,
+          method: defaultLocalAuthMethod(localAuthProvider)
+        })
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(typeof body?.error === "string" ? body.error : `Local auth failed with ${response.status}`);
+      }
+      setLocalAuthStatus(body);
+      if (typeof body?.verificationUrl === "string") {
+        window.open(body.verificationUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (error) {
+      setLocalAuthError(error instanceof Error ? error.message : "Local auth failed.");
+    } finally {
+      setLocalAuthBusy(false);
+    }
   }
 
   // ── Welcome ────────────────────────────────────────────────────────────────
@@ -399,6 +439,32 @@ export function OnboardingModal({
                 />
                 {config.provider === "openclaw" && <span className="field-help">{OPENCLAW_GATEWAY_TOKEN_HELP}</span>}
               </label>
+            )}
+            {isClaudeCli && (
+              <div className="provider-note" role="note">
+                Claude CLI reuses your local Claude CLI login. Run claude auth login in a terminal if the local helper is not already authenticated.
+              </div>
+            )}
+            {localAuthProvider && localAuthCopy && (
+              <div className="provider-note" role="status">
+                <div>{localAuthStatus?.authenticated ? localAuthCopy.signedIn : localAuthCopy.idle}</div>
+                {localAuthStatus?.accountLabel && <div>{localAuthStatus.accountLabel}</div>}
+                {localAuthStatus?.message && <div>{localAuthStatus.message}</div>}
+                {"verificationUrl" in (localAuthStatus ?? {}) && typeof localAuthStatus?.verificationUrl === "string" && (
+                  <a href={localAuthStatus.verificationUrl} target="_blank" rel="noreferrer">
+                    Open sign-in page
+                  </a>
+                )}
+                {localAuthError && <div>{localAuthError}</div>}
+                <div className="onboarding-actions">
+                  <button type="button" className="onboarding-secondary" disabled={localAuthBusy} onClick={() => requestLocalAuth("status")}>
+                    {localAuthBusy ? localAuthCopy.checking : "Check sign-in"}
+                  </button>
+                  <button type="button" className="onboarding-primary" disabled={localAuthBusy} onClick={() => requestLocalAuth("login")}>
+                    {localAuthBusy ? localAuthCopy.checking : localAuthCopy.login}
+                  </button>
+                </div>
+              </div>
             )}
             {config.provider === "openclaw" && <OpenClawSetupHint />}
           </fieldset>

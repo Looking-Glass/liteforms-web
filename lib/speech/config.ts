@@ -48,7 +48,8 @@ export function normalizeTtsConfig(config: TtsConfig): Required<TtsConfig> {
       model: config.model ?? "gpt-4o-mini-tts",
       voice: config.voice ?? "coral",
       speed: config.speed,
-      instructions: config.instructions
+      instructions: config.instructions,
+      responseFormat: config.responseFormat ?? "pcm"
     } as Required<TtsConfig>;
   }
 

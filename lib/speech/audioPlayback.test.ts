@@ -178,6 +178,51 @@ describe("audio playback", () => {
     // weight should be amplified: (rms - 0.01) / 0.18, not the raw rms (~0.133)
     expect(weight).toBeGreaterThan(0.5);
   });
+
+  it("applies TTS result lip sync gain to RMS fallback frames", async () => {
+    const source = createSource();
+    const analyser = createAnalyser([128, 136]);
+    const context = {
+      decodeAudioData: vi.fn(async () => "decoded-buffer"),
+      createBufferSource: vi.fn(() => source),
+      createAnalyser: vi.fn(() => analyser),
+      destination: {}
+    };
+    Reflect.set(globalThis, "window", { requestAnimationFrame: vi.fn() });
+    const onLipSyncFrame = vi.fn();
+
+    await playTtsResult({ audio: new ArrayBuffer(8), mimeType: "audio/wav", lipSyncGain: 1.6 }, {
+      audioContextFactory: () => context as unknown as AudioContext,
+      onLipSyncFrame
+    });
+
+    const weight = onLipSyncFrame.mock.calls[0][0].weight as number;
+    expect(weight).toBeGreaterThan(0.3);
+    expect(weight).toBeLessThan(0.4);
+  });
+
+  it("allows provider-specific RMS frames to exceed the normal mouth weight cap", async () => {
+    const source = createSource();
+    const analyser = createAnalyser([128, 255]);
+    const context = {
+      decodeAudioData: vi.fn(async () => "decoded-buffer"),
+      createBufferSource: vi.fn(() => source),
+      createAnalyser: vi.fn(() => analyser),
+      destination: {}
+    };
+    Reflect.set(globalThis, "window", { requestAnimationFrame: vi.fn() });
+    const onLipSyncFrame = vi.fn();
+
+    await playTtsResult(
+      { audio: new ArrayBuffer(8), mimeType: "audio/wav", lipSyncGain: 19.6, lipSyncMaxWeight: 1.8, lipSyncPreferMorphTarget: true },
+      {
+        audioContextFactory: () => context as unknown as AudioContext,
+        onLipSyncFrame
+      }
+    );
+
+    expect(onLipSyncFrame).toHaveBeenCalledWith(expect.objectContaining({ weight: 1.8, preferMorphTarget: true }));
+  });
 });
 
 function createSource(autoEnd = true) {

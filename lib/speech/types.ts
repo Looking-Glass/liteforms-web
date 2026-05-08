@@ -32,6 +32,9 @@ export type TtsResult = {
   audio: ArrayBuffer;
   sampleRate?: number;
   mimeType: string;
+  lipSyncGain?: number;
+  lipSyncMaxWeight?: number;
+  lipSyncPreferMorphTarget?: boolean;
   words?: WordTiming[];
 };
 
@@ -80,6 +83,7 @@ type RestTtsConfig<P extends TtsProviderId> = {
 export type OpenAiTtsConfig = RestTtsConfig<"openai"> & {
   speed?: number;
   instructions?: string;
+  responseFormat?: "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
 };
 export type GoogleTtsConfig = RestTtsConfig<"google">;
 export type XaiTtsConfig = RestTtsConfig<"xai">;

@@ -87,10 +87,10 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
     ]
   },
   {
-    id: "chatgpt-subscription",
-    label: "ChatGPT connector",
+    id: "openai-codex",
+    label: "OpenAI Codex",
     defaultModel: "gpt-5.5",
-    defaultBaseUrl: "http://127.0.0.1:1455",
+    defaultBaseUrl: "https://chatgpt.com/backend-api/codex",
     models: [
       { id: "gpt-5.5", label: "GPT-5.5" },
       { id: "gpt-5.5-pro", label: "GPT-5.5 Pro" },
@@ -99,8 +99,8 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
     ]
   },
   {
-    id: "claude-subscription",
-    label: "Claude connector",
+    id: "claude-cli",
+    label: "Claude CLI",
     defaultModel: "claude-opus-4-7",
     defaultBaseUrl: "http://127.0.0.1:1456",
     models: [
@@ -266,9 +266,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
 /** Provider IDs that require an API key or credential. */
 export const CREDENTIAL_PROVIDER_IDS: LlmProviderId[] = [
   "openai",
-  "chatgpt-subscription",
   "anthropic",
-  "claude-subscription",
   "google",
   "google-live",
   "xai",

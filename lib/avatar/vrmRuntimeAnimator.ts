@@ -82,7 +82,7 @@ export class VrmRuntimeAnimator {
     const holdUntil = this.clock.now() + getMouthHoldMs(frame);
     const expression = frame.vrmExpression;
 
-    if (expression !== null && this.resolvedMouthExpressionNames.has(expression)) {
+    if (expression !== null && !prefersMorphTarget(frame) && this.resolvedMouthExpressionNames.has(expression)) {
       this.mouthTarget = {
         mode: "expression",
         expression,
@@ -199,6 +199,10 @@ export class VrmRuntimeAnimator {
   private randomRange(min: number, max: number) {
     return MathUtils.lerp(min, max, this.clock.random());
   }
+}
+
+function prefersMorphTarget(frame: AvatarLipSyncFrame) {
+  return "preferMorphTarget" in frame && frame.preferMorphTarget === true;
 }
 
 function getMouthHoldMs(frame: AvatarLipSyncFrame) {

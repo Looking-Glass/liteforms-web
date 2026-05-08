@@ -22,9 +22,28 @@ describe("LLM provider config", () => {
       baseUrl: "http://127.0.0.1:18789/v1",
       endpointMode: "openai-compatible"
     });
+    expect(providerConfigSchema.parse({ provider: "openai-codex", model: "gpt-5.5" })).toMatchObject({
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      endpointMode: "openai-compatible"
+    });
+    expect(providerConfigSchema.parse({ provider: "claude-cli", model: "claude-opus-4-7" })).toMatchObject({
+      baseUrl: "http://127.0.0.1:1456",
+      endpointMode: "openai-compatible"
+    });
     expect(providerConfigSchema.parse({ provider: "google-live", model: "gemini-2.5-flash-native-audio-preview-12-2025" })).toMatchObject({
       baseUrl: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
       endpointMode: "native"
+    });
+  });
+
+  it("migrates legacy subscription connector ids to OpenClaw provider names", () => {
+    expect(providerConfigSchema.parse({ provider: "chatgpt-subscription", model: "gpt-5.5" })).toMatchObject({
+      provider: "openai-codex",
+      baseUrl: "https://chatgpt.com/backend-api/codex"
+    });
+    expect(providerConfigSchema.parse({ provider: "claude-subscription", model: "claude-opus-4-7" })).toMatchObject({
+      provider: "claude-cli",
+      baseUrl: "http://127.0.0.1:1456"
     });
   });
 

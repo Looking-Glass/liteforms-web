@@ -214,6 +214,47 @@ describe("LLM adapters", () => {
       );
     });
 
+    it("routes OpenAI Codex through the local Next proxy when no custom fetch is provided", async () => {
+      const proxyFetchMock = vi.fn(async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("Codex proxied"));
+              controller.close();
+            }
+          })
+        )
+      );
+      vi.stubGlobal("fetch", proxyFetchMock);
+
+      const config: BaseProviderConfig = { provider: "openai-codex", model: "gpt-5.5" };
+      const adapter = createLlmAdapter({ config });
+
+      await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+        "Codex proxied"
+      );
+
+      expect(proxyFetchMock).toHaveBeenCalledWith(
+        "/api/llm/stream",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"provider":"openai-codex"')
+        })
+      );
+    });
+
+    it("surfaces proxy response body errors", async () => {
+      const proxyFetchMock = vi.fn(async () => new Response("OpenAI Codex is not signed in.", { status: 401 }));
+      vi.stubGlobal("fetch", proxyFetchMock);
+
+      const config: BaseProviderConfig = { provider: "openai-codex", model: "gpt-5.5" };
+      const adapter = createLlmAdapter({ config });
+
+      await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).rejects.toThrow(
+        /not signed in/
+      );
+    });
+
     it("calls OpenClaw directly from hosted browser origins so localhost resolves to the user's machine", async () => {
       const localFetchMock = vi.fn(async () =>
         streamResponse(['data: {"choices":[{"delta":{"content":"OpenClaw direct"}}]}\n\n', "data: [DONE]\n\n"])

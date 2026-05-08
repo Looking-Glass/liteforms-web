@@ -60,6 +60,30 @@ describe("VRM runtime animator", () => {
     expect(closingWeight).toBeLessThan(openingWeight);
   });
 
+  it("can drive RMS mouth frames through morph targets above the expression cap", () => {
+    let now = 0;
+    const scene = new Group();
+    const face = new Group() as Group & { morphTargetDictionary: Record<string, number>; morphTargetInfluences: number[] };
+    face.morphTargetDictionary = { A: 0 };
+    face.morphTargetInfluences = [0];
+    scene.add(face);
+    const values = new Map<string, number>();
+    const vrm = createVrm({
+      scene,
+      expressionMap: {
+        aa: { binds: [{}] }
+      },
+      onSetValue: (name, value) => values.set(name, value)
+    });
+    const animator = new VrmRuntimeAnimator(vrm, { now: () => now, random: () => 0.5 });
+
+    animator.setLipSyncFrame({ target: "viseme_aa", group: "A", vrmExpression: "aa", weight: 1.8, preferMorphTarget: true });
+    animator.update(1 / 60);
+
+    expect(values.get("aa") ?? 0).toBe(0);
+    expect(face.morphTargetInfluences[0]).toBeGreaterThan(0.5);
+  });
+
   it("drives blink expressions on a randomized smooth cycle", () => {
     let now = 0;
     const setValue = vi.fn();

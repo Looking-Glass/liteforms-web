@@ -569,15 +569,15 @@ describe("OnboardingModal LLM model selection", () => {
     expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
   });
 
-  it("shows a model dropdown for ChatGPT connector (provider with known models)", () => {
+  it("shows a model dropdown for OpenAI Codex (provider with known models)", () => {
     renderModal();
-    goToLlmAndSelectProvider("chatgpt-subscription");
+    goToLlmAndSelectProvider("openai-codex");
     expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
   });
 
-  it("shows a model dropdown for Claude connector (provider with known models)", () => {
+  it("shows a model dropdown for Claude CLI (provider with known models)", () => {
     renderModal();
-    goToLlmAndSelectProvider("claude-subscription");
+    goToLlmAndSelectProvider("claude-cli");
     expect(screen.getByRole("combobox", { name: "Model" })).toBeInTheDocument();
   });
 
@@ -683,56 +683,70 @@ describe("OnboardingModal LLM model selection", () => {
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.5");
   });
 
-  // ── ChatGPT connector models ──────────────────────────────────────────────
+  // ── OpenAI Codex models ───────────────────────────────────────────────────
 
-  it("ChatGPT connector model dropdown includes gpt-5.5", () => {
+  it("OpenAI Codex model dropdown includes gpt-5.5", () => {
     renderModal();
-    goToLlmAndSelectProvider("chatgpt-subscription");
+    goToLlmAndSelectProvider("openai-codex");
     expect(screen.getByRole("option", { name: /gpt-5\.5$/i })).toBeInTheDocument();
   });
 
-  it("ChatGPT connector model dropdown includes gpt-5.5-pro", () => {
+  it("OpenAI Codex model dropdown includes gpt-5.5-pro", () => {
     renderModal();
-    goToLlmAndSelectProvider("chatgpt-subscription");
+    goToLlmAndSelectProvider("openai-codex");
     expect(screen.getByRole("option", { name: /gpt-5\.5 pro/i })).toBeInTheDocument();
   });
 
-  it("ChatGPT connector model dropdown includes gpt-5.4", () => {
+  it("OpenAI Codex model dropdown includes gpt-5.4", () => {
     renderModal();
-    goToLlmAndSelectProvider("chatgpt-subscription");
+    goToLlmAndSelectProvider("openai-codex");
     expect(screen.getByRole("option", { name: /gpt-5\.4$/i })).toBeInTheDocument();
   });
 
-  it("ChatGPT connector model dropdown includes gpt-5.4-pro", () => {
+  it("OpenAI Codex model dropdown includes gpt-5.4-pro", () => {
     renderModal();
-    goToLlmAndSelectProvider("chatgpt-subscription");
+    goToLlmAndSelectProvider("openai-codex");
     expect(screen.getByRole("option", { name: /gpt-5\.4 pro/i })).toBeInTheDocument();
   });
 
-  it("ChatGPT connector defaults to gpt-5.5", () => {
+  it("OpenAI Codex defaults to gpt-5.5", () => {
     renderModal();
-    goToLlmAndSelectProvider("chatgpt-subscription");
+    goToLlmAndSelectProvider("openai-codex");
     expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("gpt-5.5");
   });
 
-  // ── Claude connector models ───────────────────────────────────────────────
-
-  it("Claude connector model dropdown includes claude-opus-4-7", () => {
+  it("OpenAI Codex does not ask for a pasted API key", () => {
     renderModal();
-    goToLlmAndSelectProvider("claude-subscription");
+    goToLlmAndSelectProvider("openai-codex");
+    expect(screen.queryByLabelText("Credential")).not.toBeInTheDocument();
+    expect(screen.getByText(/OpenAI Codex device authorization/i)).toBeInTheDocument();
+  });
+
+  // ── Claude CLI models ─────────────────────────────────────────────────────
+
+  it("Claude CLI model dropdown includes claude-opus-4-7", () => {
+    renderModal();
+    goToLlmAndSelectProvider("claude-cli");
     expect(screen.getByRole("option", { name: /claude opus 4\.7/i })).toBeInTheDocument();
   });
 
-  it("Claude connector model dropdown includes claude-sonnet-4-5", () => {
+  it("Claude CLI model dropdown includes claude-sonnet-4-5", () => {
     renderModal();
-    goToLlmAndSelectProvider("claude-subscription");
+    goToLlmAndSelectProvider("claude-cli");
     expect(screen.getByRole("option", { name: /claude sonnet 4\.5/i })).toBeInTheDocument();
   });
 
-  it("Claude connector model dropdown includes claude-haiku-4-5", () => {
+  it("Claude CLI model dropdown includes claude-haiku-4-5", () => {
     renderModal();
-    goToLlmAndSelectProvider("claude-subscription");
+    goToLlmAndSelectProvider("claude-cli");
     expect(screen.getByRole("option", { name: /claude haiku 4\.5/i })).toBeInTheDocument();
+  });
+
+  it("Claude CLI does not ask for a pasted API key", () => {
+    renderModal();
+    goToLlmAndSelectProvider("claude-cli");
+    expect(screen.queryByLabelText("Credential")).not.toBeInTheDocument();
+    expect(screen.getByText(/reuses your local Claude CLI login/i)).toBeInTheDocument();
   });
 
   // ── Config integration ────────────────────────────────────────────────────
