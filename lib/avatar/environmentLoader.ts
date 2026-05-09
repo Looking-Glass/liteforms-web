@@ -2,17 +2,18 @@ import type { Object3D, Scene } from "three";
 import type { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { setMeshShadowFlags } from "./shadowSetup";
 
+export type EnvironmentTransform = Pick<Object3D, "scale" | "position">;
+
 /**
- * Loads a plain GLB environment model and places it in the scene using the
- * same world transform as `referenceObject`. This keeps a pre-aligned
- * environment model (one whose origin was set up to match the avatar's root)
- * spatially consistent with the avatar after any runtime framing adjustment.
+ * Loads a plain GLB environment model and places it in the scene using a
+ * reference transform. Custom avatars still use the default lobster's reference
+ * transform so the alcove remains a stable size benchmark.
  */
 export async function loadEnvironmentGlb(
   url: string,
   loader: Pick<GLTFLoader, "loadAsync">,
   scene: Scene,
-  referenceObject: Object3D
+  referenceObject: EnvironmentTransform
 ): Promise<Object3D> {
   const gltf = await loader.loadAsync(url);
   const envScene = gltf.scene;

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AmbientLight,
-  Box3,
   Clock,
   Color,
   DirectionalLight,
@@ -40,10 +39,11 @@ import {
   setMeshShadowFlags,
 } from "@/lib/avatar/shadowSetup";
 import {
-  computeModelFraming,
-  computeModelFramingMatchHeight,
-  computeModelSceneHeight,
+  measureRenderableMeshBounds,
+  solveUniformScaleMultiplierForFootprint,
+  solveUniformScaleMultiplierForMaxAxis,
 } from "@/lib/avatar/modelFraming";
+import type { ModelFootprint } from "@/lib/avatar/modelFraming";
 import { repairMorphTargetDictionaries } from "@/lib/avatar/vrmMorphTargetRepair";
 import type { GltfMeshDef } from "@/lib/avatar/vrmMorphTargetRepair";
 import {
@@ -74,13 +74,142 @@ const LOOKING_GLASS_FOCAL_TARGET = new Vector3(0.003, 0.877, 0.234);
 let lkgInitialized = false;
 const hldShadowCompositor = new HldShadowCompositor();
 
-// Cached promise for the lobster model's framed scene height (Y-axis, scene units).
-// Populated the first time it is needed; reused across all subsequent model loads.
-let _lobsterSceneHeightPromise: Promise<number> | null = null;
+type SceneTransformReference = {
+  footprint: ModelFootprint;
+  environmentScale: Vector3;
+  environmentPosition: Vector3;
+};
 
-function ensureLobsterSceneHeight(): Promise<number> {
-  if (_lobsterSceneHeightPromise) return _lobsterSceneHeightPromise;
-  _lobsterSceneHeightPromise = new Promise<number>((resolve) => {
+type AppliedFraming = {
+  footprint: ModelFootprint;
+  scaleMultiplier: number;
+  finalScale: Vector3;
+  finalPosition: Vector3;
+  finalSize: Vector3;
+  cameraTarget: Vector3;
+  measuredSize: Vector3;
+  measuredCenter: Vector3;
+  meshCount: number;
+};
+
+// Cached promise for the lobster model's framed X/Y footprint and alcove transform.
+// Populated the first time it is needed; reused across all subsequent model loads.
+let _lobsterSceneReferencePromise: Promise<SceneTransformReference> | null = null;
+
+function logLobsterBounds(
+  size: Vector3,
+  center: Vector3,
+  meshCount: number,
+  footprint: ModelFootprint,
+  environmentScale: Vector3,
+  environmentPosition: Vector3
+) {
+  console.info("Liteforms lobster VRM bounds", {
+    meshCount,
+    rawBounds: {
+      size: { x: size.x, y: size.y, z: size.z },
+      center: { x: center.x, y: center.y, z: center.z },
+    },
+    framedFootprint: footprint,
+    environmentTransform: {
+      scale: { x: environmentScale.x, y: environmentScale.y, z: environmentScale.z },
+      position: { x: environmentPosition.x, y: environmentPosition.y, z: environmentPosition.z },
+    },
+  });
+}
+
+function logAvatarFraming(
+  label: string,
+  size: Vector3,
+  center: Vector3,
+  meshCount: number,
+  scaleMultiplier: number,
+  finalScale: Vector3,
+  finalSize: Vector3
+) {
+  console.info(`Liteforms ${label} VRM framing`, {
+    meshCount,
+    measuredBounds: {
+      size: { x: size.x, y: size.y, z: size.z },
+      center: { x: center.x, y: center.y, z: center.z },
+    },
+    scaleMultiplier,
+    finalScale: { x: finalScale.x, y: finalScale.y, z: finalScale.z },
+    finalFootprint: { width: finalSize.x, height: finalSize.y },
+    postApplyBounds: {
+      size: { x: finalSize.x, y: finalSize.y, z: finalSize.z },
+    },
+  });
+}
+
+function measureSizeAtScale(object: Object3D, baseScale: Vector3, basePosition: Vector3, multiplier: number): Vector3 {
+  object.scale.copy(baseScale).multiplyScalar(multiplier);
+  object.position.copy(basePosition);
+  object.updateWorldMatrix(true, true);
+  return measureRenderableMeshBounds(object).size;
+}
+
+function solveRootPositionForBounds(object: Object3D, basePosition: Vector3, finalSize: Vector3): Vector3 {
+  object.position.copy(basePosition);
+  object.updateWorldMatrix(true, true);
+  const baseCenter = measureRenderableMeshBounds(object).center;
+  const desiredCenter = new Vector3(0, finalSize.y * 0.5 - 0.05, 0);
+  const desiredShift = desiredCenter.clone().sub(baseCenter);
+  const solvedPosition = basePosition.clone().add(desiredShift);
+  const probePosition = basePosition.clone();
+  probePosition.y += 1;
+  object.position.copy(probePosition);
+  object.updateWorldMatrix(true, true);
+  const probeCenter = measureRenderableMeshBounds(object).center;
+  const yResponse = probeCenter.y - baseCenter.y;
+  solvedPosition.y = basePosition.y + (Math.abs(yResponse) > 1e-6 ? desiredShift.y / yResponse : desiredShift.y);
+
+  object.position.copy(solvedPosition);
+  object.updateWorldMatrix(true, true);
+  return solvedPosition;
+}
+
+function applyMeasuredFraming(
+  object: Object3D,
+  target: { kind: "maxAxis"; value: number } | { kind: "footprint"; value: ModelFootprint }
+): AppliedFraming {
+  const baseScale = object.scale.clone();
+  const basePosition = object.position.clone();
+  object.position.copy(basePosition);
+  object.updateWorldMatrix(true, true);
+  const measuredBounds = measureRenderableMeshBounds(object);
+
+  const measureAtMultiplier = (multiplier: number) => measureSizeAtScale(object, baseScale, basePosition, multiplier);
+  const scaleMultiplier =
+    target.kind === "maxAxis"
+      ? solveUniformScaleMultiplierForMaxAxis(measureAtMultiplier, target.value)
+      : solveUniformScaleMultiplierForFootprint(measureAtMultiplier, target.value);
+
+  const finalScale = baseScale.clone().multiplyScalar(scaleMultiplier);
+  object.scale.copy(finalScale);
+  object.position.copy(basePosition);
+  object.updateWorldMatrix(true, true);
+  const scaledBounds = measureRenderableMeshBounds(object);
+  const finalPosition = solveRootPositionForBounds(object, basePosition, scaledBounds.size);
+  const finalBounds = measureRenderableMeshBounds(object);
+  const cameraTarget = new Vector3(0, Math.max(0.75, finalBounds.size.y * 0.45), 0);
+
+  return {
+    footprint: { width: finalBounds.size.x, height: finalBounds.size.y },
+    scaleMultiplier,
+    finalScale,
+    finalPosition,
+    finalSize: finalBounds.size,
+    cameraTarget,
+    measuredSize: measuredBounds.size,
+    measuredCenter: measuredBounds.center,
+    meshCount: measuredBounds.meshCount,
+  };
+}
+
+function ensureLobsterSceneReference(): Promise<SceneTransformReference> {
+  if (_lobsterSceneReferencePromise) return _lobsterSceneReferencePromise;
+  _lobsterSceneReferencePromise = new Promise<SceneTransformReference>((resolve) => {
     const refLoader = new GLTFLoader();
     refLoader.register((parser) => new VRMLoaderPlugin(parser));
     refLoader.load(
@@ -88,18 +217,38 @@ function ensureLobsterSceneHeight(): Promise<number> {
       (gltf) => {
         const vrm = gltf.userData.vrm as VRM | undefined;
         if (!vrm) {
-          resolve(1.0);
+          resolve({
+            footprint: { width: 1.8, height: 1.8 },
+            environmentScale: new Vector3(1, 1, 1),
+            environmentPosition: new Vector3(),
+          });
           return;
         }
         VRMUtils.rotateVRM0(vrm);
-        const bounds = new Box3().setFromObject(vrm.scene);
-        resolve(computeModelSceneHeight(bounds.getSize(new Vector3()), 1.8));
+        const framing = applyMeasuredFraming(vrm.scene, { kind: "maxAxis", value: 1.8 });
+        logLobsterBounds(
+          framing.measuredSize,
+          framing.measuredCenter,
+          framing.meshCount,
+          framing.footprint,
+          framing.finalScale,
+          framing.finalPosition
+        );
+        resolve({
+          footprint: framing.footprint,
+          environmentScale: framing.finalScale.clone(),
+          environmentPosition: framing.finalPosition.clone(),
+        });
       },
       undefined,
-      () => resolve(1.0)
+      () => resolve({
+        footprint: { width: 1.8, height: 1.8 },
+        environmentScale: new Vector3(1, 1, 1),
+        environmentPosition: new Vector3(),
+      })
     );
   });
-  return _lobsterSceneHeightPromise;
+  return _lobsterSceneReferencePromise;
 }
 
 type AvatarDebugWindow = Window & {
@@ -433,29 +582,47 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       resize();
       window.addEventListener("resize", resize);
 
-      // Start resolving the lobster reference height as early as possible so it
-      // is likely ready by the time the imported VRM finishes loading.
-      const referenceHeightPromise =
-        modelUrl !== DEFAULT_MODEL_URL ? ensureLobsterSceneHeight() : null;
+      // Start resolving the lobster reference frame as early as possible so it
+      // is likely ready by the time the imported VRM finishes loading. The
+      // alcove always uses this transform, even for custom VRMs.
+      const lobsterReferencePromise =
+        modelUrl !== DEFAULT_MODEL_URL ? ensureLobsterSceneReference() : null;
 
       const frameModel = async (object: Object3D) => {
-        let framing;
-        if (referenceHeightPromise !== null) {
-          const referenceHeight = await referenceHeightPromise;
-          framing = computeModelFramingMatchHeight(object, referenceHeight);
-        } else {
-          framing = computeModelFraming(object, 1.8);
-          // Cache the lobster height now that we have it, so subsequent
-          // imported VRM loads skip the background fetch entirely.
-          _lobsterSceneHeightPromise ??= Promise.resolve(
-            computeModelSceneHeight(
-              new Box3().setFromObject(object).getSize(new Vector3()),
-              1.8
-            )
+        const lobsterReference = lobsterReferencePromise !== null
+          ? await lobsterReferencePromise
+          : null;
+        const framing = lobsterReference
+          ? applyMeasuredFraming(object, { kind: "footprint", value: lobsterReference.footprint })
+          : applyMeasuredFraming(object, { kind: "maxAxis", value: 1.8 });
+
+        let environmentReference = lobsterReference;
+        if (!environmentReference) {
+          environmentReference = {
+            footprint: framing.footprint,
+            environmentScale: framing.finalScale.clone(),
+            environmentPosition: framing.finalPosition.clone(),
+          };
+          _lobsterSceneReferencePromise ??= Promise.resolve(environmentReference);
+          logLobsterBounds(
+            framing.measuredSize,
+            framing.measuredCenter,
+            framing.meshCount,
+            framing.footprint,
+            framing.finalScale,
+            framing.finalPosition
           );
         }
-        object.scale.setScalar(framing.scale);
-        object.position.copy(framing.position);
+
+        logAvatarFraming(
+          lobsterReference === null ? "lobster" : "imported",
+          framing.measuredSize,
+          framing.measuredCenter,
+          framing.meshCount,
+          framing.scaleMultiplier,
+          framing.finalScale,
+          framing.finalSize
+        );
         controls!.target.copy(framing.cameraTarget);
         standardTarget.copy(framing.cameraTarget);
         if (!isHldFallbackActive) {
@@ -464,6 +631,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         }
         controls!.update();
         lockPolarAngle(camera, controls!);
+        return environmentReference;
       };
 
       const onLipSyncFrame = (event: Event) => {
@@ -504,7 +672,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           setMeshShadowFlags(loadedVrm.scene, true, false);
           runtimeAnimator?.dispose();
           runtimeAnimator = new VrmRuntimeAnimator(loadedVrm);
-          await frameModel(loadedVrm.scene);
+          const environmentReference = await frameModel(loadedVrm.scene);
           if (disposed) return;
 
           // Update the holographic focal plane so the lobster is centred on
@@ -534,7 +702,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           }
           setStatus("");
 
-          void loadEnvironmentGlb(ALCOVE_URL, loader, scene, loadedVrm.scene).then((envScene) => {
+          void loadEnvironmentGlb(ALCOVE_URL, loader, scene, {
+            scale: environmentReference.environmentScale,
+            position: environmentReference.environmentPosition,
+          }).then((envScene) => {
             environmentObject = envScene;
             environmentObject.visible = !isHldFallbackActive;
           });

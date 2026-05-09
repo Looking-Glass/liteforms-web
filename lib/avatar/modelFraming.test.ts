@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { Vector3 } from "three";
+import { BoxGeometry, Group, Mesh, Vector3 } from "three";
 import {
   computeModelFramingFromBounds,
   computeModelFramingByHeight,
+  computeModelFramingByFootprint,
   computeModelSceneHeight,
+  computeModelSceneFootprint,
+  measureRenderableMeshBounds,
+  solveUniformScaleMultiplierForFootprint,
+  solveUniformScaleMultiplierForMaxAxis,
 } from "./modelFraming";
 
 describe("computeModelFramingFromBounds", () => {
@@ -65,6 +70,34 @@ describe("computeModelFramingFromBounds", () => {
     const framing = computeModelFramingFromBounds(size, center, 1.8);
 
     expect(framing.scale).toBe(1);
+  });
+});
+
+describe("measureRenderableMeshBounds", () => {
+  it("accounts for nested meshes and submeshes under the measured object", () => {
+    const root = new Group();
+    const left = new Mesh(new BoxGeometry(1, 2, 1));
+    const right = new Mesh(new BoxGeometry(2, 1, 1));
+    left.position.set(-2, 1, 0);
+    right.position.set(2, 0.5, 0);
+    right.scale.setScalar(0.5);
+    root.add(left, right);
+
+    const bounds = measureRenderableMeshBounds(root);
+
+    expect(bounds.meshCount).toBe(2);
+    expect(bounds.size.x).toBeCloseTo(5, 4);
+    expect(bounds.size.y).toBeCloseTo(2, 4);
+    expect(bounds.center.x).toBeCloseTo(0, 4);
+    expect(bounds.center.y).toBeCloseTo(1, 4);
+  });
+
+  it("returns empty bounds when no renderable meshes exist", () => {
+    const bounds = measureRenderableMeshBounds(new Group());
+
+    expect(bounds.meshCount).toBe(0);
+    expect(bounds.size.length()).toBe(0);
+    expect(bounds.center.length()).toBe(0);
   });
 });
 
@@ -131,6 +164,103 @@ describe("computeModelFramingByHeight", () => {
   });
 });
 
+describe("computeModelFramingByFootprint", () => {
+  it("scales a tall imported model by height while keeping it within the reference width", () => {
+    const size = new Vector3(0.5, 2.0, 0.3);
+    const center = new Vector3(0, 1.0, 0);
+    const targetFootprint = { width: 1.8, height: 0.6 };
+
+    const framing = computeModelFramingByFootprint(size, center, targetFootprint);
+
+    expect(framing.scale).toBeCloseTo(0.6 / 2.0, 4);
+    expect(size.y * framing.scale).toBeCloseTo(targetFootprint.height, 4);
+    expect(size.x * framing.scale).toBeLessThanOrEqual(targetFootprint.width);
+  });
+
+  it("scales a wide imported model by width while keeping it within the reference height", () => {
+    const size = new Vector3(3.0, 0.5, 0.4);
+    const center = new Vector3(0, 0.25, 0);
+    const targetFootprint = { width: 1.8, height: 0.6 };
+
+    const framing = computeModelFramingByFootprint(size, center, targetFootprint);
+
+    expect(framing.scale).toBeCloseTo(1.8 / 3.0, 4);
+    expect(size.x * framing.scale).toBeCloseTo(targetFootprint.width, 4);
+    expect(size.y * framing.scale).toBeLessThanOrEqual(targetFootprint.height);
+  });
+
+  it("returns scale 1 when neither model footprint axis can be measured", () => {
+    const size = new Vector3(0, 0, 1);
+    const center = new Vector3(0, 0, 0);
+
+    const framing = computeModelFramingByFootprint(size, center, { width: 1.8, height: 0.6 });
+
+    expect(framing.scale).toBe(1);
+  });
+
+  it("returns a multiplier for already-transformed bounds rather than an absolute root scale", () => {
+    const unscaledSize = new Vector3(0.5, 2.0, 0.3);
+    const rootScale = 0.25;
+    const measuredSize = unscaledSize.clone().multiplyScalar(rootScale);
+    const measuredCenter = new Vector3(0, 1.0, 0).multiplyScalar(rootScale);
+    const targetFootprint = { width: 1.8, height: 0.6 };
+
+    const framing = computeModelFramingByFootprint(measuredSize, measuredCenter, targetFootprint);
+    const finalRootScale = rootScale * framing.scale;
+
+    expect(finalRootScale).toBeCloseTo(0.6 / 2.0, 4);
+    expect(unscaledSize.y * finalRootScale).toBeCloseTo(targetFootprint.height, 4);
+  });
+});
+
+describe("solveUniformScaleMultiplierForFootprint", () => {
+  it("finds the direct scale when measured bounds grow linearly", () => {
+    const base = new Vector3(0.5, 2.0, 0.3);
+
+    const scale = solveUniformScaleMultiplierForFootprint(
+      (multiplier) => base.clone().multiplyScalar(multiplier),
+      { width: 1.8, height: 0.6 }
+    );
+
+    expect(scale).toBeCloseTo(0.6 / 2.0, 4);
+  });
+
+  it("finds the smaller multiplier needed when skinned bounds grow non-linearly", () => {
+    const base = new Vector3(0.5, 2.0, 0.3);
+
+    const scale = solveUniformScaleMultiplierForFootprint(
+      (multiplier) => base.clone().multiplyScalar(multiplier * multiplier),
+      { width: 1.8, height: 0.6 }
+    );
+
+    expect(scale).toBeCloseTo(Math.sqrt(0.6 / 2.0), 4);
+  });
+
+  it("scales up small models until one footprint axis reaches the target", () => {
+    const base = new Vector3(0.25, 0.5, 0.2);
+
+    const scale = solveUniformScaleMultiplierForFootprint(
+      (multiplier) => base.clone().multiplyScalar(multiplier),
+      { width: 1.8, height: 0.6 }
+    );
+
+    expect(scale).toBeCloseTo(0.6 / 0.5, 4);
+  });
+});
+
+describe("solveUniformScaleMultiplierForMaxAxis", () => {
+  it("finds the multiplier that makes the measured max axis match the target", () => {
+    const base = new Vector3(1.0, 2.0, 0.5);
+
+    const scale = solveUniformScaleMultiplierForMaxAxis(
+      (multiplier) => base.clone().multiplyScalar(multiplier),
+      1.8
+    );
+
+    expect(scale).toBeCloseTo(1.8 / 2.0, 4);
+  });
+});
+
 describe("computeModelSceneHeight", () => {
   it("returns the Y height the model occupies after applying the max-axis framing scale", () => {
     // size 0.5 × 1.7 × 0.5 → maxAxis = 1.7, scale = 1.8/1.7
@@ -156,5 +286,17 @@ describe("computeModelSceneHeight", () => {
     const size = new Vector3(1.0, 0, 0.5);
     const result = computeModelSceneHeight(size, 1.8);
     expect(result).toBe(0);
+  });
+});
+
+describe("computeModelSceneFootprint", () => {
+  it("returns the X/Y footprint the model occupies after applying max-axis framing", () => {
+    const size = new Vector3(1.2, 0.4, 0.8);
+    const scale = 1.8 / 1.2;
+
+    const result = computeModelSceneFootprint(size, 1.8);
+
+    expect(result.width).toBeCloseTo(1.2 * scale, 4);
+    expect(result.height).toBeCloseTo(0.4 * scale, 4);
   });
 });
