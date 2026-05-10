@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPopupFeatureString,
+  detectSingleScreen,
   findSecondaryScreen,
   isLookingGlassDeviceConnected,
   openHldHologramWindow,
+  shouldHideHologramButtonForScreen,
 } from "./hologramWindow";
 
 describe("isLookingGlassDeviceConnected", () => {
@@ -60,5 +62,51 @@ describe("openHldHologramWindow", () => {
 
     expect(calls[0][0]).toBe("");
     expect(calls[0][1]).toBe("liteforms-hld-hologram");
+  });
+});
+
+describe("shouldHideHologramButtonForScreen", () => {
+  it("hides the button when the browser reports a single screen", () => {
+    expect(shouldHideHologramButtonForScreen({ isExtended: false })).toBe(true);
+  });
+
+  it("keeps the button visible when the browser reports extended screens", () => {
+    expect(shouldHideHologramButtonForScreen({ isExtended: true })).toBe(false);
+  });
+
+  it("keeps the current implementation when screen extension information is unavailable", () => {
+    expect(shouldHideHologramButtonForScreen({})).toBe(false);
+  });
+});
+
+describe("detectSingleScreen", () => {
+  it("uses screen.isExtended when the browser exposes it", async () => {
+    await expect(detectSingleScreen({ screen: { isExtended: false } })).resolves.toBe(true);
+    await expect(detectSingleScreen({ screen: { isExtended: true } })).resolves.toBe(false);
+  });
+
+  it("falls back to getScreenDetails when screen.isExtended is unavailable", async () => {
+    await expect(detectSingleScreen({
+      screen: {},
+      getScreenDetails: async () => ({
+        screens: [{ left: 0, top: 0, width: 1920, height: 1080 }],
+      }),
+    })).resolves.toBe(true);
+  });
+
+  it("reports extended screens from getScreenDetails", async () => {
+    await expect(detectSingleScreen({
+      screen: {},
+      getScreenDetails: async () => ({
+        screens: [
+          { left: 0, top: 0, width: 1920, height: 1080 },
+          { left: 1920, top: 0, width: 1080, height: 1920 },
+        ],
+      }),
+    })).resolves.toBe(false);
+  });
+
+  it("leaves visibility unchanged when screen detection is unavailable", async () => {
+    await expect(detectSingleScreen({ screen: {} })).resolves.toBeUndefined();
   });
 });

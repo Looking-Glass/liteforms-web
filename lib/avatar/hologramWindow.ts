@@ -23,6 +23,33 @@ export function isLookingGlassDeviceConnected(config: LookingGlassConnectionStat
   return Boolean(config.calibration?.serial?.trim());
 }
 
+export function shouldHideHologramButtonForScreen(screen: unknown): boolean {
+  if (!screen || typeof screen !== "object" || !("isExtended" in screen)) return false;
+  return (screen as { isExtended?: unknown }).isExtended === false;
+}
+
+export async function detectSingleScreen(win: unknown): Promise<boolean | undefined> {
+  if (!win || typeof win !== "object") return undefined;
+
+  const screen = (win as { screen?: unknown }).screen;
+  if (screen && typeof screen === "object" && "isExtended" in screen) {
+    return (screen as { isExtended?: unknown }).isExtended === false;
+  }
+
+  const screenDetailsWindow = win as {
+    getScreenDetails?: () => Promise<{ screens?: ScreenLike[] }>;
+  };
+  if (typeof screenDetailsWindow.getScreenDetails !== "function") return undefined;
+
+  try {
+    const screenDetails = await screenDetailsWindow.getScreenDetails();
+    if (!Array.isArray(screenDetails.screens)) return undefined;
+    return screenDetails.screens.length <= 1;
+  } catch {
+    return undefined;
+  }
+}
+
 export function findSecondaryScreen(
   screens: ScreenLike[],
   currentWindow: WindowPositionLike = {}

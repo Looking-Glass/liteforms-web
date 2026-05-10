@@ -32,4 +32,18 @@ describe("global CSS", () => {
     expect(onboardingOverlayRule).toContain("z-index: 1000");
     expect(lookingGlassButtonRule).toContain("z-index: 20");
   });
+
+  it("renders the avatar scene as a 9:16 portrait canvas", () => {
+    const avatarSceneRule = cssRule(".avatar-scene");
+
+    expect(avatarSceneRule).toContain("aspect-ratio: 9 / 16");
+    expect(avatarSceneRule).toContain("calc((100vh - 80px) * 9 / 16)");
+    expect(avatarSceneRule).not.toContain("aspect-ratio: 1");
+  });
+
+  it("can force-hide the Looking Glass button for single-screen browsers", () => {
+    const singleScreenButtonRule = cssRule('#VRButton[data-liteforms-single-screen="true"]');
+
+    expect(singleScreenButtonRule).toContain("display: none !important");
+  });
 });

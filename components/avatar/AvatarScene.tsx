@@ -26,6 +26,7 @@ import type { AvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
 import { VrmRuntimeAnimator } from "@/lib/avatar/vrmRuntimeAnimator";
 import { loadVrmAnimationClip, VrmIdleAnimator } from "@/lib/avatar/vrmAnimationLoader";
 import {
+  computeLkgInlineViewSize,
   computeLookingGlassCameraArrayState,
   computeLookingGlassFocalPoint,
   withLookingGlassCameraPose,
@@ -54,10 +55,18 @@ import {
   hasOpaqueSilhouettePixels,
 } from "@/lib/avatar/hldShadowCompositor";
 import {
+  detectSingleScreen,
   isLookingGlassDeviceConnected,
   openHldHologramWindow,
+  shouldHideHologramButtonForScreen,
 } from "@/lib/avatar/hologramWindow";
-import { computeHldCameraInitialPosition } from "@/lib/avatar/hldCameraControls";
+import {
+  AVATAR_CAMERA_ASPECT,
+  AVATAR_CAMERA_DEFAULT_POSITION,
+  AVATAR_CAMERA_VERTICAL_FOV_DEGREES,
+  applyAvatarCameraKeyMove,
+  computeHldCameraInitialPosition,
+} from "@/lib/avatar/hldCameraControls";
 
 type AvatarSceneProps = {
   modelUrl?: string;
@@ -66,9 +75,12 @@ type AvatarSceneProps = {
 const DEFAULT_MODEL_URL = "/models/lobsterEdit.vrm";
 const DEFAULT_IDLE_ANIMATION_URL = "/animations/idle_loop.vrma";
 const ALCOVE_URL = "/models/Alcove.glb";
-const HLD_FALLBACK_ASPECT = 9 / 16;
 const IMPORTED_MODEL_VERTICAL_OFFSET = 0.025;
-const PREVIEW_CAMERA_INITIAL_POSITION = new Vector3(0, 1.2, 3);
+const PREVIEW_CAMERA_INITIAL_POSITION = new Vector3(
+  AVATAR_CAMERA_DEFAULT_POSITION.x,
+  AVATAR_CAMERA_DEFAULT_POSITION.y,
+  AVATAR_CAMERA_DEFAULT_POSITION.z
+);
 const LOOKING_GLASS_CAMERA_CENTER = new Vector3(-0.071, 0.856, 6.234);
 const LOOKING_GLASS_FOCAL_TARGET = new Vector3(0.003, 0.877, 0.234);
 
@@ -324,8 +336,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let lkgConfigChangeCleanup: (() => void) | undefined;
     let debugWindowCleanup: (() => void) | undefined;
     let xrSessionEndCleanup: (() => void) | undefined;
+    let keydownListener: ((event: KeyboardEvent) => void) | undefined;
     let exitHldFallback: (() => void) | undefined;
     let isHldFallbackActive = false;
+    let isLkgSessionActive = false;
     let standardCameraPosition = PREVIEW_CAMERA_INITIAL_POSITION.clone();
     let standardTarget = new Vector3(0, 1, 0);
 
@@ -415,7 +429,12 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         controls!.update();
       };
 
-      const camera = new PerspectiveCamera(30, 1, 0.1, 100);
+      const camera = new PerspectiveCamera(
+        AVATAR_CAMERA_VERTICAL_FOV_DEGREES,
+        AVATAR_CAMERA_ASPECT,
+        0.1,
+        100
+      );
       camera.position.copy(PREVIEW_CAMERA_INITIAL_POSITION);
 
       controls = new OrbitControls(camera, renderer.domElement);
@@ -424,13 +443,31 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       controls.enableRotate = true;
       controls.mouseButtons.RIGHT = MOUSE.PAN;
       controls.minDistance = 1;
-      controls.maxDistance = 6;
+      controls.maxDistance = 12;
       controls.target.set(0, 1, 0);
       lockPolarAngle(camera, controls);
 
       controls.addEventListener("change", () => {
         enforceLockedPolarAngle(camera, controls!);
       });
+
+      keydownListener = (event: KeyboardEvent) => {
+        const movedPose = applyAvatarCameraKeyMove(camera.position, controls!.target, event.key);
+        if (!movedPose) return;
+
+        event.preventDefault();
+        camera.position.set(movedPose.position.x, movedPose.position.y, movedPose.position.z);
+        controls!.target.set(movedPose.target.x, movedPose.target.y, movedPose.target.z);
+        camera.lookAt(controls!.target);
+        lockPolarAngle(camera, controls!);
+        controls!.update();
+
+        if (!isHldFallbackActive && !isLkgSessionActive) {
+          standardCameraPosition.copy(camera.position);
+          standardTarget.copy(controls!.target);
+        }
+      };
+      window.addEventListener("keydown", keydownListener);
 
       const lkgConfigChangeListener = () => {};
       LookingGlassConfig.addEventListener("on-config-changed", lkgConfigChangeListener);
@@ -587,13 +624,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       const resize = () => {
         let clientWidth = container.clientWidth;
         let clientHeight = container.clientHeight;
-        if (isHldFallbackActive) {
-          clientHeight = container.clientHeight;
-          clientWidth = Math.round(clientHeight * HLD_FALLBACK_ASPECT);
-          if (clientWidth > container.clientWidth) {
-            clientWidth = container.clientWidth;
-            clientHeight = Math.round(clientWidth / HLD_FALLBACK_ASPECT);
-          }
+        if (!isLkgSessionActive) {
+          const inlineSize = computeLkgInlineViewSize(clientWidth, clientHeight);
+          clientWidth = inlineSize.width;
+          clientHeight = inlineSize.height;
         }
         renderer!.setSize(clientWidth, clientHeight, false);
         if (shadowCanvas) {
@@ -601,7 +635,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           shadowCanvas.width = Math.max(1, Math.floor(clientWidth * dpr));
           shadowCanvas.height = Math.max(1, Math.floor(clientHeight * dpr));
         }
-        camera.aspect = clientWidth / Math.max(clientHeight, 1);
+        camera.aspect = AVATAR_CAMERA_ASPECT;
         camera.updateProjectionMatrix();
       };
       resizeListener = resize;
@@ -760,6 +794,14 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         if (vrButton) vrButton.innerHTML = label;
       };
 
+      const hideVrButtonForSingleScreen = () => {
+        if (!vrButton) return;
+        vrButton.hidden = true;
+        vrButton.dataset.liteformsSingleScreen = "true";
+        vrButton.setAttribute("aria-hidden", "true");
+        vrButton.style.setProperty("display", "none", "important");
+      };
+
       const applyHldFallbackMode = (active: boolean) => {
         isHldFallbackActive = active;
         container.classList.toggle("avatar-scene--hld", active);
@@ -901,11 +943,18 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         applyHldFallbackMode(true);
       };
 
-      let isLkgSessionActive = false;
       // 3. Add VRButton after polyfill has set navigator.xr, so VRButton's
       //    isSessionSupported query finds the LKG device.
       vrButton = VRButton.createButton(renderer);
       document.body.appendChild(vrButton);
+      if (shouldHideHologramButtonForScreen(window.screen)) {
+        hideVrButtonForSingleScreen();
+      } else {
+        void detectSingleScreen(window).then((hasSingleScreen) => {
+          if (disposed || hasSingleScreen !== true) return;
+          hideVrButtonForSingleScreen();
+        });
+      }
       vrButton.addEventListener(
         "click",
         (event) => {
@@ -1072,6 +1121,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       disposed = true;
       renderer?.setAnimationLoop(null);
       if (resizeListener) window.removeEventListener("resize", resizeListener);
+      if (keydownListener) window.removeEventListener("keydown", keydownListener);
       if (lipSyncListener) window.removeEventListener(avatarLipSyncEventName, lipSyncListener);
       lkgControlsObserver?.disconnect();
       vrButtonTextObserver?.disconnect();

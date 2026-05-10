@@ -62,14 +62,14 @@ textarea {
 }
 
 .avatar-scene {
-  aspect-ratio: 1;
+  aspect-ratio: 9 / 16;
   background: oklch(0.08 0.04 228);
   border: 1px solid var(--border);
   border-radius: 10px;
-  min-height: 280px;
+  min-height: 0;
   overflow: hidden;
   position: relative;
-  width: min(100%, 520px);
+  width: min(100%, 520px, calc((100vh - 80px) * 9 / 16));
 }
 
 .avatar-scene--hld {
@@ -760,6 +760,10 @@ button:disabled {
 
 #VRButton {
   z-index: 20 !important;
+}
+
+#VRButton[data-liteforms-single-screen="true"] {
+  display: none !important;
 }
 
 .onboarding-modal {
