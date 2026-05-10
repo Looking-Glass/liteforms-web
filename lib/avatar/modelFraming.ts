@@ -12,6 +12,11 @@ export type ModelFootprint = {
   height: number;
 };
 
+export type FootprintInsetOptions = {
+  widthFill?: number;
+  heightFill?: number;
+};
+
 export type ModelBounds = {
   size: Vector3;
   center: Vector3;
@@ -23,41 +28,69 @@ type ScaleSolveOptions = {
   maxMultiplier?: number;
 };
 
+const DEFAULT_IMPORTED_WIDTH_FILL = 0.9;
+const DEFAULT_IMPORTED_HEIGHT_FILL = 0.82;
+
 type MeasurableMesh = Object3D & {
   isMesh?: boolean;
   geometry?: {
     attributes?: {
       position?: { count: number };
     };
+    boundingBox?: Box3 | null;
+    computeBoundingBox?: () => void;
   };
+  boundingBox?: Box3 | null;
+  computeBoundingBox?: () => void;
   getVertexPosition?: (index: number, target: Vector3) => Vector3;
 };
 
 /**
- * Measures only renderable mesh vertices under an object, including nested
- * meshes/submeshes and skinned mesh vertex transforms.
+ * Measures renderable meshes under an object using exact vertices plus each
+ * mesh's bounding envelope, matching Unity-style combined renderer bounds.
  */
 export function measureRenderableMeshBounds(object: Object3D): ModelBounds {
   object.updateWorldMatrix(true, true);
 
   const bounds = new Box3();
+  const meshBounds = new Box3();
   const vertex = new Vector3();
   let meshCount = 0;
 
   object.traverse((child) => {
     const mesh = child as MeasurableMesh;
-    const position = mesh.geometry?.attributes?.position;
-    if (mesh.isMesh !== true || !position || typeof mesh.getVertexPosition !== "function") {
+    const geometry = mesh.geometry;
+    if (mesh.isMesh !== true || !geometry) {
       return;
     }
+
+    const position = mesh.geometry?.attributes?.position;
 
     mesh.updateWorldMatrix(true, false);
     meshCount += 1;
 
-    for (let i = 0; i < position.count; i += 1) {
-      mesh.getVertexPosition(i, vertex);
-      vertex.applyMatrix4(mesh.matrixWorld);
-      bounds.expandByPoint(vertex);
+    if (position && typeof mesh.getVertexPosition === "function") {
+      for (let i = 0; i < position.count; i += 1) {
+        mesh.getVertexPosition(i, vertex);
+        vertex.applyMatrix4(mesh.matrixWorld);
+        bounds.expandByPoint(vertex);
+      }
+    }
+
+    if (mesh.boundingBox === null && typeof mesh.computeBoundingBox === "function") {
+      mesh.computeBoundingBox();
+    }
+    if (mesh.boundingBox && !mesh.boundingBox.isEmpty()) {
+      meshBounds.copy(mesh.boundingBox).applyMatrix4(mesh.matrixWorld);
+      bounds.union(meshBounds);
+    }
+
+    if (geometry.boundingBox === null && typeof geometry.computeBoundingBox === "function") {
+      geometry.computeBoundingBox();
+    }
+    if (geometry.boundingBox && !geometry.boundingBox.isEmpty()) {
+      meshBounds.copy(geometry.boundingBox).applyMatrix4(mesh.matrixWorld);
+      bounds.union(meshBounds);
     }
   });
 
@@ -178,6 +211,20 @@ export function computeModelFramingByFootprint(
   };
 }
 
+export function computeModelPositionFromBounds(
+  basePosition: Vector3,
+  boundsCenter: Vector3,
+  finalSize: Vector3,
+  targetBottom = -0.05
+): Vector3 {
+  const desiredCenter = new Vector3(
+    0,
+    finalSize.y * 0.5 + targetBottom,
+    0
+  );
+  return basePosition.clone().add(desiredCenter.sub(boundsCenter));
+}
+
 export function solveUniformScaleMultiplierForFootprint(
   measureSizeAtMultiplier: (multiplier: number) => Vector3,
   targetFootprint: ModelFootprint,
@@ -189,6 +236,24 @@ export function solveUniformScaleMultiplierForFootprint(
     size.x <= targetFootprint.width && size.y <= targetFootprint.height;
 
   return solveUniformScaleMultiplier(measureSizeAtMultiplier, fits, iterations, maxMultiplier);
+}
+
+export function computeInsetFootprint(
+  referenceFootprint: ModelFootprint,
+  options: FootprintInsetOptions = {}
+): ModelFootprint {
+  const widthFill = normalizeFill(options.widthFill, DEFAULT_IMPORTED_WIDTH_FILL);
+  const heightFill = normalizeFill(options.heightFill, DEFAULT_IMPORTED_HEIGHT_FILL);
+
+  return {
+    width: referenceFootprint.width * widthFill,
+    height: referenceFootprint.height * heightFill,
+  };
+}
+
+function normalizeFill(value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 export function solveUniformScaleMultiplierForMaxAxis(

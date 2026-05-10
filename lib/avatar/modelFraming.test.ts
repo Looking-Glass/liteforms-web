@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { BoxGeometry, Group, Mesh, Vector3 } from "three";
+import { Box3, BoxGeometry, Group, Mesh, Vector3 } from "three";
 import {
   computeModelFramingFromBounds,
   computeModelFramingByHeight,
   computeModelFramingByFootprint,
+  computeModelPositionFromBounds,
   computeModelSceneHeight,
   computeModelSceneFootprint,
+  computeInsetFootprint,
   measureRenderableMeshBounds,
   solveUniformScaleMultiplierForFootprint,
   solveUniformScaleMultiplierForMaxAxis,
@@ -98,6 +100,22 @@ describe("measureRenderableMeshBounds", () => {
     expect(bounds.meshCount).toBe(0);
     expect(bounds.size.length()).toBe(0);
     expect(bounds.center.length()).toBe(0);
+  });
+
+  it("includes mesh bounding boxes as a conservative renderer-style envelope", () => {
+    const root = new Group();
+    const mesh = new Mesh(new BoxGeometry(1, 1, 1));
+    mesh.geometry.boundingBox = new Box3(
+      new Vector3(-1, -2, -0.5),
+      new Vector3(1, 2, 0.5)
+    );
+    root.add(mesh);
+
+    const bounds = measureRenderableMeshBounds(root);
+
+    expect(bounds.meshCount).toBe(1);
+    expect(bounds.size.x).toBeCloseTo(2, 4);
+    expect(bounds.size.y).toBeCloseTo(4, 4);
   });
 });
 
@@ -210,6 +228,74 @@ describe("computeModelFramingByFootprint", () => {
 
     expect(finalRootScale).toBeCloseTo(0.6 / 2.0, 4);
     expect(unscaledSize.y * finalRootScale).toBeCloseTo(targetFootprint.height, 4);
+  });
+});
+
+describe("computeModelPositionFromBounds", () => {
+  it("aligns the measured bottom to the requested reference baseline", () => {
+    const basePosition = new Vector3(0, 0, 0);
+    const boundsCenter = new Vector3(0.25, 0.8, -0.4);
+    const finalSize = new Vector3(0.6, 1.6, 0.5);
+
+    const position = computeModelPositionFromBounds(
+      basePosition,
+      boundsCenter,
+      finalSize,
+      0.1
+    );
+
+    expect(position.x).toBeCloseTo(-0.25, 4);
+    expect(position.y).toBeCloseTo(0.1, 4);
+    expect(position.z).toBeCloseTo(0.4, 4);
+  });
+
+  it("preserves the existing default bounds-bottom alignment for the lobster reference", () => {
+    const basePosition = new Vector3(0, 0, 0);
+    const boundsCenter = new Vector3(0.25, 0.8, -0.4);
+    const finalSize = new Vector3(0.6, 1.6, 0.5);
+
+    const position = computeModelPositionFromBounds(
+      basePosition,
+      boundsCenter,
+      finalSize
+    );
+
+    expect(position.x).toBeCloseTo(-0.25, 4);
+    expect(position.y).toBeCloseTo(-0.05, 4);
+    expect(position.z).toBeCloseTo(0.4, 4);
+  });
+});
+
+describe("computeInsetFootprint", () => {
+  it("keeps imported avatars inside a smaller alcove aperture than the lobster reference", () => {
+    const referenceFootprint = { width: 1.8, height: 0.9 };
+
+    const target = computeInsetFootprint(referenceFootprint);
+
+    expect(target.width).toBeCloseTo(1.62, 4);
+    expect(target.height).toBeCloseTo(0.738, 4);
+  });
+
+  it("allows callers to override the default aperture fill", () => {
+    const referenceFootprint = { width: 2, height: 1 };
+
+    const target = computeInsetFootprint(referenceFootprint, {
+      widthFill: 0.75,
+      heightFill: 0.6,
+    });
+
+    expect(target).toEqual({ width: 1.5, height: 0.6 });
+  });
+
+  it("ignores invalid fill values so the fallback target remains measurable", () => {
+    const referenceFootprint = { width: 2, height: 1 };
+
+    const target = computeInsetFootprint(referenceFootprint, {
+      widthFill: -1,
+      heightFill: Number.NaN,
+    });
+
+    expect(target).toEqual(referenceFootprint);
   });
 });
 

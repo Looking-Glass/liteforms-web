@@ -39,6 +39,8 @@ import {
   setMeshShadowFlags,
 } from "@/lib/avatar/shadowSetup";
 import {
+  computeInsetFootprint,
+  computeModelPositionFromBounds,
   measureRenderableMeshBounds,
   solveUniformScaleMultiplierForFootprint,
   solveUniformScaleMultiplierForMaxAxis,
@@ -65,6 +67,7 @@ const DEFAULT_MODEL_URL = "/models/lobsterEdit.vrm";
 const DEFAULT_IDLE_ANIMATION_URL = "/animations/idle_loop.vrma";
 const ALCOVE_URL = "/models/Alcove.glb";
 const HLD_FALLBACK_ASPECT = 9 / 16;
+const IMPORTED_MODEL_VERTICAL_OFFSET = 0.025;
 const PREVIEW_CAMERA_INITIAL_POSITION = new Vector3(0, 1.2, 3);
 const LOOKING_GLASS_CAMERA_CENTER = new Vector3(-0.071, 0.856, 6.234);
 const LOOKING_GLASS_FOCAL_TARGET = new Vector3(0.003, 0.877, 0.234);
@@ -76,6 +79,7 @@ const hldShadowCompositor = new HldShadowCompositor();
 
 type SceneTransformReference = {
   footprint: ModelFootprint;
+  boundsBottom: number;
   environmentScale: Vector3;
   environmentPosition: Vector3;
 };
@@ -86,6 +90,7 @@ type AppliedFraming = {
   finalScale: Vector3;
   finalPosition: Vector3;
   finalSize: Vector3;
+  finalBoundsBottom: number;
   cameraTarget: Vector3;
   measuredSize: Vector3;
   measuredCenter: Vector3;
@@ -149,20 +154,30 @@ function measureSizeAtScale(object: Object3D, baseScale: Vector3, basePosition: 
   return measureRenderableMeshBounds(object).size;
 }
 
-function solveRootPositionForBounds(object: Object3D, basePosition: Vector3, finalSize: Vector3): Vector3 {
+function solveRootPositionForBounds(
+  object: Object3D,
+  basePosition: Vector3,
+  finalSize: Vector3,
+  targetBottom = -0.05
+): Vector3 {
   object.position.copy(basePosition);
   object.updateWorldMatrix(true, true);
   const baseCenter = measureRenderableMeshBounds(object).center;
-  const desiredCenter = new Vector3(0, finalSize.y * 0.5 - 0.05, 0);
-  const desiredShift = desiredCenter.clone().sub(baseCenter);
-  const solvedPosition = basePosition.clone().add(desiredShift);
+  const solvedPosition = computeModelPositionFromBounds(
+    basePosition,
+    baseCenter,
+    finalSize,
+    targetBottom
+  );
+
   const probePosition = basePosition.clone();
   probePosition.y += 1;
   object.position.copy(probePosition);
   object.updateWorldMatrix(true, true);
   const probeCenter = measureRenderableMeshBounds(object).center;
   const yResponse = probeCenter.y - baseCenter.y;
-  solvedPosition.y = basePosition.y + (Math.abs(yResponse) > 1e-6 ? desiredShift.y / yResponse : desiredShift.y);
+  const desiredYShift = solvedPosition.y - basePosition.y;
+  solvedPosition.y = basePosition.y + (Math.abs(yResponse) > 1e-6 ? desiredYShift / yResponse : desiredYShift);
 
   object.position.copy(solvedPosition);
   object.updateWorldMatrix(true, true);
@@ -171,7 +186,8 @@ function solveRootPositionForBounds(object: Object3D, basePosition: Vector3, fin
 
 function applyMeasuredFraming(
   object: Object3D,
-  target: { kind: "maxAxis"; value: number } | { kind: "footprint"; value: ModelFootprint }
+  target: { kind: "maxAxis"; value: number } | { kind: "footprint"; value: ModelFootprint },
+  options: { targetBottom?: number } = {}
 ): AppliedFraming {
   const baseScale = object.scale.clone();
   const basePosition = object.position.clone();
@@ -190,8 +206,14 @@ function applyMeasuredFraming(
   object.position.copy(basePosition);
   object.updateWorldMatrix(true, true);
   const scaledBounds = measureRenderableMeshBounds(object);
-  const finalPosition = solveRootPositionForBounds(object, basePosition, scaledBounds.size);
+  const finalPosition = solveRootPositionForBounds(
+    object,
+    basePosition,
+    scaledBounds.size,
+    options.targetBottom
+  );
   const finalBounds = measureRenderableMeshBounds(object);
+  const finalBoundsBottom = finalBounds.center.y - finalBounds.size.y * 0.5;
   const cameraTarget = new Vector3(0, Math.max(0.75, finalBounds.size.y * 0.45), 0);
 
   return {
@@ -200,6 +222,7 @@ function applyMeasuredFraming(
     finalScale,
     finalPosition,
     finalSize: finalBounds.size,
+    finalBoundsBottom,
     cameraTarget,
     measuredSize: measuredBounds.size,
     measuredCenter: measuredBounds.center,
@@ -219,6 +242,7 @@ function ensureLobsterSceneReference(): Promise<SceneTransformReference> {
         if (!vrm) {
           resolve({
             footprint: { width: 1.8, height: 1.8 },
+            boundsBottom: -0.05,
             environmentScale: new Vector3(1, 1, 1),
             environmentPosition: new Vector3(),
           });
@@ -236,6 +260,7 @@ function ensureLobsterSceneReference(): Promise<SceneTransformReference> {
         );
         resolve({
           footprint: framing.footprint,
+          boundsBottom: framing.finalBoundsBottom,
           environmentScale: framing.finalScale.clone(),
           environmentPosition: framing.finalPosition.clone(),
         });
@@ -243,6 +268,7 @@ function ensureLobsterSceneReference(): Promise<SceneTransformReference> {
       undefined,
       () => resolve({
         footprint: { width: 1.8, height: 1.8 },
+        boundsBottom: -0.05,
         environmentScale: new Vector3(1, 1, 1),
         environmentPosition: new Vector3(),
       })
@@ -593,13 +619,19 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           ? await lobsterReferencePromise
           : null;
         const framing = lobsterReference
-          ? applyMeasuredFraming(object, { kind: "footprint", value: lobsterReference.footprint })
+          ? applyMeasuredFraming(object, {
+              kind: "footprint",
+              value: computeInsetFootprint(lobsterReference.footprint),
+            }, {
+              targetBottom: lobsterReference.boundsBottom + IMPORTED_MODEL_VERTICAL_OFFSET,
+            })
           : applyMeasuredFraming(object, { kind: "maxAxis", value: 1.8 });
 
         let environmentReference = lobsterReference;
         if (!environmentReference) {
           environmentReference = {
             footprint: framing.footprint,
+            boundsBottom: framing.finalBoundsBottom,
             environmentScale: framing.finalScale.clone(),
             environmentPosition: framing.finalPosition.clone(),
           };
