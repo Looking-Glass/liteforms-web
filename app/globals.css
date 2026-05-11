@@ -57,6 +57,8 @@ textarea {
 .avatar-viewport {
   align-items: center;
   display: flex;
+  flex-direction: column;
+  gap: 12px;
   justify-content: center;
   padding: 40px;
 }
@@ -69,7 +71,7 @@ textarea {
   min-height: 0;
   overflow: hidden;
   position: relative;
-  width: min(100%, 520px, calc((100vh - 80px) * 9 / 16));
+  width: min(100%, 480px, calc((100vh - 144px) * 9 / 16));
 }
 
 .avatar-scene--hld {
@@ -759,6 +761,11 @@ button:disabled {
 }
 
 #VRButton {
+  bottom: auto !important;
+  left: auto !important;
+  margin: 0 !important;
+  position: static !important;
+  transform: none !important;
   z-index: 20 !important;
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AVATAR_CAMERA_ASPECT,
   AVATAR_CAMERA_DEFAULT_POSITION,
+  AVATAR_CAMERA_DEFAULT_TARGET,
   AVATAR_CAMERA_VERTICAL_FOV_DEGREES,
   applyAvatarCameraKeyMove,
   computeHldCameraInitialPosition,
@@ -16,8 +17,9 @@ describe("main avatar camera configuration", () => {
     expect(AVATAR_CAMERA_ASPECT).toBeCloseTo(9 / 16);
   });
 
-  it("backs the default camera away for the narrower FOV", () => {
-    expect(AVATAR_CAMERA_DEFAULT_POSITION.z).toBeGreaterThan(6);
+  it("uses the tuned default 2D camera pose", () => {
+    expect(AVATAR_CAMERA_DEFAULT_POSITION).toEqual({ x: 0, y: 1.372, z: 7.779 });
+    expect(AVATAR_CAMERA_DEFAULT_TARGET).toEqual({ x: 0, y: 0.93, z: 1.197 });
   });
 });
 

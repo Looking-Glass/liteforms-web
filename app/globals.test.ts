@@ -37,8 +37,18 @@ describe("global CSS", () => {
     const avatarSceneRule = cssRule(".avatar-scene");
 
     expect(avatarSceneRule).toContain("aspect-ratio: 9 / 16");
-    expect(avatarSceneRule).toContain("calc((100vh - 80px) * 9 / 16)");
+    expect(avatarSceneRule).toContain("calc((100vh - 144px) * 9 / 16)");
     expect(avatarSceneRule).not.toContain("aspect-ratio: 1");
+  });
+
+  it("lays out the Looking Glass button directly below the avatar scene", () => {
+    const avatarViewportRule = cssRule(".avatar-viewport");
+    const lookingGlassButtonRule = cssRule("#VRButton");
+
+    expect(avatarViewportRule).toContain("flex-direction: column");
+    expect(avatarViewportRule).toContain("gap: 12px");
+    expect(lookingGlassButtonRule).toContain("position: static !important");
+    expect(lookingGlassButtonRule).toContain("margin: 0 !important");
   });
 
   it("can force-hide the Looking Glass button for single-screen browsers", () => {

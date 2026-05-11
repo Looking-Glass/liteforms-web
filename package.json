@@ -1,11 +1,12 @@
 {
   "name": "liteforms-web",
   "version": "0.0.1",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -31,6 +32,8 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/three": "^0.184.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^15.5.18",
     "jsdom": "^29.1.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

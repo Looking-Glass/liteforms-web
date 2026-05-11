@@ -165,21 +165,18 @@ Liteforms/
 
 ### 5.1 Backend Strategy
 
-Liteforms Web must use a configured account identity as the canonical MVP identity for hosted builds. AI-Avatar calls the Liteforms API with bearer access tokens. A user who can log in to AI-Avatar must be able to log in to Liteforms Web with the same account when that integration is configured.
+Liteforms Web is currently distributed as a browser-first open-source app without the hosted Liteforms API integration.
 
 MVP backend modes:
 
-- Preferred: use the existing Looking Glass/Liteforms API directly from Next.js server routes.
-- Acceptable fallback: implement a web-owned data layer only where existing API gaps block the MVP, while preserving compatible user identity fields.
+- Preferred: keep account, character, and model state browser-local for the open-source build.
+- Hosted API work is deferred until there is a deliberate integration project with public setup instructions.
 - Do not add a hosted auth provider for MVP unless there is a deliberate integration project.
 
 ### 5.2 Auth Requirements
 
-- Use the configured hosted identity provider in the Next.js app.
-- Store hosted auth sessions in secure HTTP-only cookies.
-- Server routes must be able to retrieve a valid access token for the existing Liteforms API.
-- Support refresh-token/session renewal equivalent to AI-Avatar's refresh flow.
-- Expose a typed `LiteformsApiClient` for server calls.
+- Do not require a hosted identity provider in the open-source app.
+- Do not expose server routes that depend on private hosted Liteforms API credentials.
 - Account profile must include:
   - Hosted auth subject / user id.
   - email.
@@ -187,12 +184,12 @@ MVP backend modes:
   - RPM ID and RPM token if present.
 - The web app can call existing account/usage endpoints after login to hydrate RPM data, existing characters, and analytics data. Do not use usage fields for MVP gating.
 
-### 5.3 API Compatibility Layer
+### 5.3 Deferred API Compatibility Layer
 
-Implement a `lib/liteforms-api/` client that mirrors the Unity-generated client surface but uses TypeScript types:
+A hosted API compatibility layer may be reintroduced later, but it is intentionally absent from the open-source build.
 
 ```text
-lib/liteforms-api/
+hosted-api-client/
   client.ts
   auth.ts
   account.ts
@@ -358,8 +355,7 @@ Implementation:
 - `lib/rpm/frame-api.ts`: event subscription and message validation.
 - `components/avatar/ReadyPlayerMeCreator.tsx`: iframe wrapper.
 - `app/api/rpm/session/route.ts`: authenticated RPM session update/restore through Liteforms API.
-- `app/api/models/route.ts`: create/update Liteforms model records.
-- `app/api/characters/[characterId]/route.ts`: link `avatar_id`.
+- Hosted model and character synchronization routes are deferred.
 
 Compatibility:
 
@@ -725,8 +721,7 @@ Future:
 
 Server-compatible RAG:
 
-- `lib/liteforms-api/documents.ts`: create, update, delete, and read documents.
-- `lib/liteforms-api/fragments.ts`: call `searchByPrompt`.
+- Deferred hosted API clients would handle document metadata and fragment search.
 - Default embedding model: `text-embedding-3-small`.
 - Use `matchCount` and `matchThreshold` settings equivalent to AI-Avatar remote config.
 - Run two searches before each LLM turn, matching AI-Avatar:
@@ -866,10 +861,6 @@ Minimum browser:
 ### 16.1 Vercel
 
 - Next.js App Router deployment.
-- Liteforms API env vars:
-  - `LITEFORMS_API_BASE_URL`
-  - `LITEFORMS_API_ACCESS_TOKEN`
-  - `LITEFORMS_API_BASE_URL`
 - Ready Player Me env vars:
   - `READY_PLAYER_ME_SUBDOMAIN`
   - `READY_PLAYER_ME_API_KEY` if server-side RPM API calls are needed.

@@ -19,7 +19,6 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import type { VRM } from "@pixiv/three-vrm";
 import { VRMAnimationLoaderPlugin } from "@pixiv/three-vrm-animation";
-import { getVrmExpressionDebugSummaries } from "@/lib/avatar/vrmExpressionController";
 import { getMissingVrm0MouthMorphTargets } from "@/lib/avatar/morphTargetController";
 import { avatarLipSyncEventName } from "@/lib/avatar/lipSyncEvents";
 import type { AvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
@@ -27,7 +26,6 @@ import { VrmRuntimeAnimator } from "@/lib/avatar/vrmRuntimeAnimator";
 import { loadVrmAnimationClip, VrmIdleAnimator } from "@/lib/avatar/vrmAnimationLoader";
 import {
   computeLkgInlineViewSize,
-  computeLookingGlassCameraArrayState,
   computeLookingGlassFocalPoint,
   withLookingGlassCameraPose,
   withLookingGlassTarget,
@@ -63,6 +61,7 @@ import {
 import {
   AVATAR_CAMERA_ASPECT,
   AVATAR_CAMERA_DEFAULT_POSITION,
+  AVATAR_CAMERA_DEFAULT_TARGET,
   AVATAR_CAMERA_VERTICAL_FOV_DEGREES,
   applyAvatarCameraKeyMove,
   computeHldCameraInitialPosition,
@@ -80,6 +79,11 @@ const PREVIEW_CAMERA_INITIAL_POSITION = new Vector3(
   AVATAR_CAMERA_DEFAULT_POSITION.x,
   AVATAR_CAMERA_DEFAULT_POSITION.y,
   AVATAR_CAMERA_DEFAULT_POSITION.z
+);
+const PREVIEW_CAMERA_INITIAL_TARGET = new Vector3(
+  AVATAR_CAMERA_DEFAULT_TARGET.x,
+  AVATAR_CAMERA_DEFAULT_TARGET.y,
+  AVATAR_CAMERA_DEFAULT_TARGET.z
 );
 const LOOKING_GLASS_CAMERA_CENTER = new Vector3(-0.071, 0.856, 6.234);
 const LOOKING_GLASS_FOCAL_TARGET = new Vector3(0.003, 0.877, 0.234);
@@ -112,52 +116,6 @@ type AppliedFraming = {
 // Cached promise for the lobster model's framed X/Y footprint and alcove transform.
 // Populated the first time it is needed; reused across all subsequent model loads.
 let _lobsterSceneReferencePromise: Promise<SceneTransformReference> | null = null;
-
-function logLobsterBounds(
-  size: Vector3,
-  center: Vector3,
-  meshCount: number,
-  footprint: ModelFootprint,
-  environmentScale: Vector3,
-  environmentPosition: Vector3
-) {
-  console.info("Liteforms lobster VRM bounds", {
-    meshCount,
-    rawBounds: {
-      size: { x: size.x, y: size.y, z: size.z },
-      center: { x: center.x, y: center.y, z: center.z },
-    },
-    framedFootprint: footprint,
-    environmentTransform: {
-      scale: { x: environmentScale.x, y: environmentScale.y, z: environmentScale.z },
-      position: { x: environmentPosition.x, y: environmentPosition.y, z: environmentPosition.z },
-    },
-  });
-}
-
-function logAvatarFraming(
-  label: string,
-  size: Vector3,
-  center: Vector3,
-  meshCount: number,
-  scaleMultiplier: number,
-  finalScale: Vector3,
-  finalSize: Vector3
-) {
-  console.info(`Liteforms ${label} VRM framing`, {
-    meshCount,
-    measuredBounds: {
-      size: { x: size.x, y: size.y, z: size.z },
-      center: { x: center.x, y: center.y, z: center.z },
-    },
-    scaleMultiplier,
-    finalScale: { x: finalScale.x, y: finalScale.y, z: finalScale.z },
-    finalFootprint: { width: finalSize.x, height: finalSize.y },
-    postApplyBounds: {
-      size: { x: finalSize.x, y: finalSize.y, z: finalSize.z },
-    },
-  });
-}
 
 function measureSizeAtScale(object: Object3D, baseScale: Vector3, basePosition: Vector3, multiplier: number): Vector3 {
   object.scale.copy(baseScale).multiplyScalar(multiplier);
@@ -262,14 +220,6 @@ function ensureLobsterSceneReference(): Promise<SceneTransformReference> {
         }
         VRMUtils.rotateVRM0(vrm);
         const framing = applyMeasuredFraming(vrm.scene, { kind: "maxAxis", value: 1.8 });
-        logLobsterBounds(
-          framing.measuredSize,
-          framing.measuredCenter,
-          framing.meshCount,
-          framing.footprint,
-          framing.finalScale,
-          framing.finalPosition
-        );
         resolve({
           footprint: framing.footprint,
           boundsBottom: framing.finalBoundsBottom,
@@ -288,20 +238,6 @@ function ensureLobsterSceneReference(): Promise<SceneTransformReference> {
   });
   return _lobsterSceneReferencePromise;
 }
-
-type AvatarDebugWindow = Window & {
-  setHologramTarget?: (x: number, y: number, z: number) => void;
-  setHologramFocalTarget?: (x: number, y: number, z: number) => void;
-  setHologramCameraPosition?: (x: number, y: number, z: number) => void;
-  setHologramPose?: (px: number, py: number, pz: number, tx: number, ty: number, tz: number) => void;
-  getHologramTarget?: () => { x: number; y: number; z: number };
-  getHologramCameraPosition?: () => { x: number; y: number; z: number };
-  setPreviewTarget?: (x: number, y: number, z: number) => void;
-  getPreviewTarget?: () => { x: number; y: number; z: number };
-  setKeyLightPosition?: (x: number, y: number, z: number) => void;
-  setFillLightPosition?: (x: number, y: number, z: number) => void;
-  setAmbientIntensity?: (intensity: number) => void;
-};
 
 export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -334,14 +270,13 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let lkgControlsObserver: MutationObserver | undefined;
     let vrButtonTextObserver: MutationObserver | undefined;
     let lkgConfigChangeCleanup: (() => void) | undefined;
-    let debugWindowCleanup: (() => void) | undefined;
     let xrSessionEndCleanup: (() => void) | undefined;
     let keydownListener: ((event: KeyboardEvent) => void) | undefined;
     let exitHldFallback: (() => void) | undefined;
     let isHldFallbackActive = false;
     let isLkgSessionActive = false;
-    let standardCameraPosition = PREVIEW_CAMERA_INITIAL_POSITION.clone();
-    let standardTarget = new Vector3(0, 1, 0);
+    const standardCameraPosition = PREVIEW_CAMERA_INITIAL_POSITION.clone();
+    const standardTarget = PREVIEW_CAMERA_INITIAL_TARGET.clone();
 
     void import("@lookingglass/webxr").then(({ LookingGlassWebXRPolyfill, LookingGlassConfig }) => {
       if (disposed) return;
@@ -444,7 +379,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       controls.mouseButtons.RIGHT = MOUSE.PAN;
       controls.minDistance = 1;
       controls.maxDistance = 12;
-      controls.target.set(0, 1, 0);
+      controls.target.copy(PREVIEW_CAMERA_INITIAL_TARGET);
       lockPolarAngle(camera, controls);
 
       controls.addEventListener("change", () => {
@@ -474,133 +409,6 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       lkgConfigChangeCleanup = () => {
         LookingGlassConfig.removeEventListener("on-config-changed", lkgConfigChangeListener);
       };
-      const currentLookingGlassFocalPoint = (): LookingGlassFocalPoint => ({
-        targetX: LookingGlassConfig.targetX,
-        targetY: LookingGlassConfig.targetY,
-        targetZ: LookingGlassConfig.targetZ,
-        targetDiam: LookingGlassConfig.targetDiam,
-        trackballX: LookingGlassConfig.trackballX,
-        trackballY: LookingGlassConfig.trackballY,
-        fovy: LookingGlassConfig.fovy,
-      });
-      const currentLookingGlassCameraState = () =>
-        computeLookingGlassCameraArrayState({
-          ...currentLookingGlassFocalPoint(),
-          viewCone: LookingGlassConfig.viewCone,
-          numViews: LookingGlassConfig.numViews,
-        });
-      const updateLookingGlassCameraPose = (position: Vector3, target: Vector3) => {
-        LookingGlassConfig.updateViewControls(
-          withLookingGlassCameraPose(currentLookingGlassFocalPoint(), position, target)
-        );
-      };
-
-      const applyHologramTarget = (x: number, y: number, z: number) => {
-        LookingGlassConfig.updateViewControls({ targetX: x, targetY: y, targetZ: z });
-      };
-      const applyHologramFocalTarget = (x: number, y: number, z: number) => {
-        updateLookingGlassCameraPose(
-          currentLookingGlassCameraState().centerPosition,
-          new Vector3(x, y, z)
-        );
-      };
-      const applyHologramCameraPosition = (x: number, y: number, z: number) => {
-        updateLookingGlassCameraPose(
-          new Vector3(x, y, z),
-          currentLookingGlassCameraState().target
-        );
-      };
-      const applyHologramPose = (
-        px: number,
-        py: number,
-        pz: number,
-        tx: number,
-        ty: number,
-        tz: number
-      ) => {
-        updateLookingGlassCameraPose(new Vector3(px, py, pz), new Vector3(tx, ty, tz));
-      };
-
-      const applyPreviewTarget = (x: number, y: number, z: number) => {
-        controls!.target.set(x, y, z);
-        camera.lookAt(controls!.target);
-      };
-
-      const debugWindow = window as AvatarDebugWindow;
-      debugWindow.setHologramTarget = applyHologramTarget;
-      debugWindow.setHologramFocalTarget = applyHologramFocalTarget;
-      debugWindow.setHologramCameraPosition = applyHologramCameraPosition;
-      debugWindow.setHologramPose = applyHologramPose;
-      const getHologramTarget = () => {
-        return {
-          x: LookingGlassConfig.targetX,
-          y: LookingGlassConfig.targetY,
-          z: LookingGlassConfig.targetZ,
-        };
-      };
-      debugWindow.getHologramTarget = getHologramTarget;
-      const getHologramCameraPosition = () => {
-        const position = currentLookingGlassCameraState().centerPosition;
-        return { x: position.x, y: position.y, z: position.z };
-      };
-      debugWindow.getHologramCameraPosition = getHologramCameraPosition;
-      debugWindow.setPreviewTarget = applyPreviewTarget;
-      const getPreviewTarget = () => {
-        const target = controls!.target;
-        return { x: target.x, y: target.y, z: target.z };
-      };
-      debugWindow.getPreviewTarget = getPreviewTarget;
-      const applyKeyLightPosition = (x: number, y: number, z: number) => {
-        keyLight.position.set(x, y, z);
-        console.log(`[Key Light] position set to (${x}, ${y}, ${z})`);
-      };
-      debugWindow.setKeyLightPosition = applyKeyLightPosition;
-      const applyFillLightPosition = (x: number, y: number, z: number) => {
-        fillLight.position.set(x, y, z);
-        console.log(`[Fill Light] position set to (${x}, ${y}, ${z})`);
-      };
-      debugWindow.setFillLightPosition = applyFillLightPosition;
-      const applyAmbientIntensity = (intensity: number) => {
-        ambientLight.intensity = intensity;
-        console.log(`[Ambient Light] intensity set to ${intensity}`);
-      };
-      debugWindow.setAmbientIntensity = applyAmbientIntensity;
-      debugWindowCleanup = () => {
-        if (debugWindow.setHologramTarget === applyHologramTarget) {
-          delete debugWindow.setHologramTarget;
-        }
-        if (debugWindow.setHologramFocalTarget === applyHologramFocalTarget) {
-          delete debugWindow.setHologramFocalTarget;
-        }
-        if (debugWindow.setHologramCameraPosition === applyHologramCameraPosition) {
-          delete debugWindow.setHologramCameraPosition;
-        }
-        if (debugWindow.setHologramPose === applyHologramPose) {
-          delete debugWindow.setHologramPose;
-        }
-        if (debugWindow.getHologramTarget === getHologramTarget) {
-          delete debugWindow.getHologramTarget;
-        }
-        if (debugWindow.getHologramCameraPosition === getHologramCameraPosition) {
-          delete debugWindow.getHologramCameraPosition;
-        }
-        if (debugWindow.setPreviewTarget === applyPreviewTarget) {
-          delete debugWindow.setPreviewTarget;
-        }
-        if (debugWindow.getPreviewTarget === getPreviewTarget) {
-          delete debugWindow.getPreviewTarget;
-        }
-        if (debugWindow.setKeyLightPosition === applyKeyLightPosition) {
-          delete debugWindow.setKeyLightPosition;
-        }
-        if (debugWindow.setFillLightPosition === applyFillLightPosition) {
-          delete debugWindow.setFillLightPosition;
-        }
-        if (debugWindow.setAmbientIntensity === applyAmbientIntensity) {
-          delete debugWindow.setAmbientIntensity;
-        }
-      };
-
       const ambientLight = new AmbientLight("#fff6e5", 1.2);
       const keyLight = new DirectionalLight("#ffffff", 2.4);
       keyLight.position.set(0.5, 0.5, 2);
@@ -670,27 +478,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
             environmentPosition: framing.finalPosition.clone(),
           };
           _lobsterSceneReferencePromise ??= Promise.resolve(environmentReference);
-          logLobsterBounds(
-            framing.measuredSize,
-            framing.measuredCenter,
-            framing.meshCount,
-            framing.footprint,
-            framing.finalScale,
-            framing.finalPosition
-          );
         }
 
-        logAvatarFraming(
-          lobsterReference === null ? "lobster" : "imported",
-          framing.measuredSize,
-          framing.measuredCenter,
-          framing.meshCount,
-          framing.scaleMultiplier,
-          framing.finalScale,
-          framing.finalSize
-        );
-        controls!.target.copy(framing.cameraTarget);
-        standardTarget.copy(framing.cameraTarget);
+        controls!.target.copy(PREVIEW_CAMERA_INITIAL_TARGET);
+        standardTarget.copy(PREVIEW_CAMERA_INITIAL_TARGET);
         if (!isHldFallbackActive) {
           standardCameraPosition.copy(PREVIEW_CAMERA_INITIAL_POSITION);
           camera.position.copy(standardCameraPosition);
@@ -754,12 +545,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           );
           LookingGlassConfig.updateViewControls(focalPoint);
 
-          const expressionSummaries = getVrmExpressionDebugSummaries(loadedVrm.expressionManager);
           const missingVrm0MouthMorphs = getMissingVrm0MouthMorphTargets(loadedVrm.scene);
 
-          if (expressionSummaries.length > 0) {
-            console.debug(`Liteforms avatar expressions: ${expressionSummaries.join(", ")}`);
-          }
           for (const targetName of missingVrm0MouthMorphs) {
             if (!warnedMissingMorphsRef.current.has(targetName)) {
               warnedMissingMorphsRef.current.add(targetName);
@@ -946,7 +733,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       // 3. Add VRButton after polyfill has set navigator.xr, so VRButton's
       //    isSessionSupported query finds the LKG device.
       vrButton = VRButton.createButton(renderer);
-      document.body.appendChild(vrButton);
+      (container.parentElement ?? document.body).appendChild(vrButton);
       if (shouldHideHologramButtonForScreen(window.screen)) {
         hideVrButtonForSingleScreen();
       } else {
@@ -1126,7 +913,6 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       lkgControlsObserver?.disconnect();
       vrButtonTextObserver?.disconnect();
       lkgConfigChangeCleanup?.();
-      debugWindowCleanup?.();
       xrSessionEndCleanup?.();
       exitHldFallback?.();
       container.style.aspectRatio = "";

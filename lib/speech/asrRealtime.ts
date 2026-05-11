@@ -570,7 +570,7 @@ function createRollingPcmAsrRealtimeSession({
     void worker
       .transcribe({ ...workerConfig, audio })
       .then((result) => {
-        console.debug(`[ASR gate] transcript chunk: "${result.text}"`);
+        debugAsrRealtime("pcm transcript chunk", { text: result.text });
         appendTranscript(result.text);
       })
       .catch((caught) => {
@@ -599,11 +599,17 @@ function createRollingPcmAsrRealtimeSession({
       const chunkRms = Math.sqrt(sum / (end - start));
       if (chunkRms > peakChunkRms) peakChunkRms = chunkRms;
       if (chunkRms >= ASR_REALTIME_SILENCE_RMS_THRESHOLD) {
-        console.debug(`[ASR gate] PASS — peak chunk RMS ${peakChunkRms.toFixed(4)} >= threshold ${ASR_REALTIME_SILENCE_RMS_THRESHOLD}`);
+        debugAsrRealtime("pcm speech gate passed", {
+          peakChunkRms,
+          threshold: ASR_REALTIME_SILENCE_RMS_THRESHOLD
+        });
         return true;
       }
     }
-    console.debug(`[ASR gate] SKIP — peak chunk RMS ${peakChunkRms.toFixed(4)} < threshold ${ASR_REALTIME_SILENCE_RMS_THRESHOLD}`);
+    debugAsrRealtime("pcm speech gate skipped", {
+      peakChunkRms,
+      threshold: ASR_REALTIME_SILENCE_RMS_THRESHOLD
+    });
     return false;
   };
 
@@ -685,9 +691,15 @@ function createRollingPcmAsrRealtimeSession({
         transcript = "";
         pendingWindow = null;
         timer = setInterval(enqueueLatestWindow, pcmHopMs);
-        console.debug(`[ASR gate] started PCM session — hop ${pcmHopMs}ms, window ${pcmWindowMs}ms, threshold ${ASR_REALTIME_SILENCE_RMS_THRESHOLD}`);
+        debugAsrRealtime("pcm session started", {
+          hopMs: pcmHopMs,
+          windowMs: pcmWindowMs,
+          threshold: ASR_REALTIME_SILENCE_RMS_THRESHOLD
+        });
       } catch (err) {
-        console.debug("[ASR gate] Web Audio setup failed, falling back to MediaRecorder (no silence gate)", err);
+        debugAsrRealtime("pcm setup failed; using MediaRecorder fallback", {
+          error: err instanceof Error ? err.message : String(err)
+        });
         cleanupAudio();
         fallbackSession = fallback();
         fallbackSession.start(stream);

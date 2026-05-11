@@ -49,30 +49,20 @@ If port `3000` is already in use, Next.js will choose another port.
 ```bash
 npm run dev       # Start the Next.js development server
 npm run build     # Create a production build
+npm run lint      # Run ESLint
 npm run test      # Run the Vitest suite
 npm run test:watch
 ```
-
-The `lint` script is present in `package.json`, but this app uses Next.js 15, where `next lint` is no longer available in the same form. Prefer TypeScript/build checks and Vitest until a dedicated ESLint command is added.
 
 ## Configuration
 
 Most provider configuration happens inside the app UI. Users can choose the built-in local path or configure their own LLM, TTS, and STT providers.
 
-Optional server-side Liteforms API integration uses these environment variables:
-
-```bash
-LITEFORMS_API_BASE_URL=
-LITEFORMS_API_ACCESS_TOKEN=
-```
-
-These are only needed for server routes that call a hosted Liteforms API. The open-source local app does not require them for basic avatar chat.
-
 ## Credentials And Privacy
 
 Provider API keys and tokens entered in the app are stored in browser-local storage, not committed to the repository. The `.gitignore` excludes local environment files such as `.env`, `.env.local`, and `.env*.local`.
 
-Do not commit real provider credentials, hosted API tokens, or private model assets. If you add a new provider, keep credentials user-supplied and local unless there is a deliberate server-side integration.
+Do not commit real provider credentials or private model assets. If you add a new provider, keep credentials user-supplied and local unless there is a deliberate server-side integration.
 
 ## Project Structure
 
