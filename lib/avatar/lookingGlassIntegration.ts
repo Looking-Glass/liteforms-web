@@ -61,7 +61,7 @@ export type LookingGlassVectorLike = { x: number; y: number; z: number };
  * Computes the Looking Glass camera convergence target from a framed VRM model.
  *
  * The maths mirror frameModel() in AvatarScene so the holographic focal plane
- * is centred on the same point the orbit controls look at.
+ * is centred on the same fixed avatar focal point.
  */
 export function computeLookingGlassFocalPoint(object: Object3D): LookingGlassFocalPoint {
   const bounds = new Box3().setFromObject(object);
@@ -69,7 +69,7 @@ export function computeLookingGlassFocalPoint(object: Object3D): LookingGlassFoc
   const maxAxis = Math.max(size.x, size.y, size.z);
   const scale = maxAxis > 0 ? 1.8 / maxAxis : 1;
 
-  // Mirrors: controls.target.set(0, Math.max(0.75, size.y * scale * 0.45), 0)
+  // Mirrors the fixed avatar target height used for the preview camera.
   const targetY = Math.max(0.75, size.y * scale * 0.45);
 
   return {

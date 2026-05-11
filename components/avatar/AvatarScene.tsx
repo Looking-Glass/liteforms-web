@@ -6,7 +6,6 @@ import {
   Clock,
   Color,
   DirectionalLight,
-  MOUSE,
   PerspectiveCamera,
   Scene,
   Vector3,
@@ -14,7 +13,6 @@ import {
 } from "three";
 import type { Object3D } from "three";
 import { VRButton } from "three/examples/jsm/webxr/VRButton.js";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import type { VRM } from "@pixiv/three-vrm";
@@ -58,13 +56,12 @@ import {
   openHldHologramWindow,
   shouldHideHologramButtonForScreen,
 } from "@/lib/avatar/hologramWindow";
+import { createModelDragRotationController } from "@/lib/avatar/modelDragRotation";
 import {
   AVATAR_CAMERA_ASPECT,
   AVATAR_CAMERA_DEFAULT_POSITION,
   AVATAR_CAMERA_DEFAULT_TARGET,
   AVATAR_CAMERA_VERTICAL_FOV_DEGREES,
-  applyAvatarCameraKeyMove,
-  computeHldCameraInitialPosition,
 } from "@/lib/avatar/hldCameraControls";
 
 type AvatarSceneProps = {
@@ -260,23 +257,23 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let hldPopupUnloadListener: (() => void) | undefined;
     let hldPopupResizeListener: (() => void) | undefined;
     let vrButton: HTMLElement | undefined;
-    let controls: OrbitControls | undefined;
     let environmentObject: Object3D | undefined;
     let currentVrm: VRM | undefined;
     let runtimeAnimator: VrmRuntimeAnimator | undefined;
     let idleAnimator: VrmIdleAnimator | undefined;
     let resizeListener: (() => void) | undefined;
     let lipSyncListener: ((event: Event) => void) | undefined;
+    let modelPointerDownListener: ((event: PointerEvent) => void) | undefined;
+    let modelPointerMoveListener: ((event: PointerEvent) => void) | undefined;
+    let modelPointerUpListener: ((event: PointerEvent) => void) | undefined;
+    let modelPointerCancelListener: ((event: PointerEvent) => void) | undefined;
     let lkgControlsObserver: MutationObserver | undefined;
     let vrButtonTextObserver: MutationObserver | undefined;
     let lkgConfigChangeCleanup: (() => void) | undefined;
     let xrSessionEndCleanup: (() => void) | undefined;
-    let keydownListener: ((event: KeyboardEvent) => void) | undefined;
     let exitHldFallback: (() => void) | undefined;
     let isHldFallbackActive = false;
     let isLkgSessionActive = false;
-    const standardCameraPosition = PREVIEW_CAMERA_INITIAL_POSITION.clone();
-    const standardTarget = PREVIEW_CAMERA_INITIAL_TARGET.clone();
 
     void import("@lookingglass/webxr").then(({ LookingGlassWebXRPolyfill, LookingGlassConfig }) => {
       if (disposed) return;
@@ -320,48 +317,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
 
       const scene = new Scene();
       scene.background = new Color("#15130f");
-      const hldCameraPosition = computeHldCameraInitialPosition(PREVIEW_CAMERA_INITIAL_POSITION);
-      const hldInitialCameraPosition = new Vector3(
-        hldCameraPosition.x,
-        hldCameraPosition.y,
-        hldCameraPosition.z
-      );
-
-      let lockedPhi = Math.PI / 2;
-      const lockPolarAngle = (cam: PerspectiveCamera, ctrl: OrbitControls) => {
-        const dy = cam.position.y - ctrl.target.y;
-        const dxz = Math.sqrt(
-          (cam.position.x - ctrl.target.x) ** 2 +
-          (cam.position.z - ctrl.target.z) ** 2
-        );
-        lockedPhi = Math.atan2(dxz, dy);
-        ctrl.minPolarAngle = lockedPhi;
-        ctrl.maxPolarAngle = lockedPhi;
-      };
-
-      const enforceLockedPolarAngle = (cam: PerspectiveCamera, ctrl: OrbitControls) => {
-        const t = ctrl.target;
-        const offset = cam.position.clone().sub(t);
-        const r = offset.length();
-        if (r <= 0) return;
-
-        const theta = Math.atan2(offset.x, offset.z);
-        cam.position.set(
-          t.x + r * Math.sin(lockedPhi) * Math.sin(theta),
-          t.y + r * Math.cos(lockedPhi),
-          t.z + r * Math.sin(lockedPhi) * Math.cos(theta)
-        );
-        cam.lookAt(t);
-        ctrl.minPolarAngle = lockedPhi;
-        ctrl.maxPolarAngle = lockedPhi;
-      };
 
       const restorePreviewCamera = () => {
-        camera.position.copy(standardCameraPosition);
-        controls!.target.copy(standardTarget);
-        camera.lookAt(controls!.target);
-        lockPolarAngle(camera, controls!);
-        controls!.update();
+        camera.position.copy(PREVIEW_CAMERA_INITIAL_POSITION);
+        camera.lookAt(PREVIEW_CAMERA_INITIAL_TARGET);
       };
 
       const camera = new PerspectiveCamera(
@@ -371,38 +330,34 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         100
       );
       camera.position.copy(PREVIEW_CAMERA_INITIAL_POSITION);
+      camera.lookAt(PREVIEW_CAMERA_INITIAL_TARGET);
 
-      controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = false;
-      controls.enablePan = false;
-      controls.enableRotate = true;
-      controls.mouseButtons.RIGHT = MOUSE.PAN;
-      controls.minDistance = 1;
-      controls.maxDistance = 12;
-      controls.target.copy(PREVIEW_CAMERA_INITIAL_TARGET);
-      lockPolarAngle(camera, controls);
-
-      controls.addEventListener("change", () => {
-        enforceLockedPolarAngle(camera, controls!);
-      });
-
-      keydownListener = (event: KeyboardEvent) => {
-        const movedPose = applyAvatarCameraKeyMove(camera.position, controls!.target, event.key);
-        if (!movedPose) return;
-
-        event.preventDefault();
-        camera.position.set(movedPose.position.x, movedPose.position.y, movedPose.position.z);
-        controls!.target.set(movedPose.target.x, movedPose.target.y, movedPose.target.z);
-        camera.lookAt(controls!.target);
-        lockPolarAngle(camera, controls!);
-        controls!.update();
-
-        if (!isHldFallbackActive && !isLkgSessionActive) {
-          standardCameraPosition.copy(camera.position);
-          standardTarget.copy(controls!.target);
+      const modelDragRotation = createModelDragRotationController(() => currentVrm?.scene);
+      modelPointerDownListener = (event: PointerEvent) => {
+        if (event.button === 0) {
+          renderer!.domElement.setPointerCapture?.(event.pointerId);
         }
+        modelDragRotation.onPointerDown(event);
       };
-      window.addEventListener("keydown", keydownListener);
+      modelPointerMoveListener = (event: PointerEvent) => {
+        modelDragRotation.onPointerMove(event);
+      };
+      modelPointerUpListener = (event: PointerEvent) => {
+        if (renderer!.domElement.hasPointerCapture?.(event.pointerId)) {
+          renderer!.domElement.releasePointerCapture(event.pointerId);
+        }
+        modelDragRotation.onPointerUp(event);
+      };
+      modelPointerCancelListener = (event: PointerEvent) => {
+        if (renderer!.domElement.hasPointerCapture?.(event.pointerId)) {
+          renderer!.domElement.releasePointerCapture(event.pointerId);
+        }
+        modelDragRotation.onPointerCancel(event);
+      };
+      renderer.domElement.addEventListener("pointerdown", modelPointerDownListener);
+      renderer.domElement.addEventListener("pointermove", modelPointerMoveListener);
+      renderer.domElement.addEventListener("pointerup", modelPointerUpListener);
+      renderer.domElement.addEventListener("pointercancel", modelPointerCancelListener);
 
       const lkgConfigChangeListener = () => {};
       LookingGlassConfig.addEventListener("on-config-changed", lkgConfigChangeListener);
@@ -480,14 +435,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           _lobsterSceneReferencePromise ??= Promise.resolve(environmentReference);
         }
 
-        controls!.target.copy(PREVIEW_CAMERA_INITIAL_TARGET);
-        standardTarget.copy(PREVIEW_CAMERA_INITIAL_TARGET);
-        if (!isHldFallbackActive) {
-          standardCameraPosition.copy(PREVIEW_CAMERA_INITIAL_POSITION);
-          camera.position.copy(standardCameraPosition);
-        }
-        controls!.update();
-        lockPolarAngle(camera, controls!);
+        if (!isHldFallbackActive) restorePreviewCamera();
         return environmentReference;
       };
 
@@ -597,17 +545,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         if (environmentObject) environmentObject.visible = !active;
 
         renderer!.xr.enabled = !active;
-        controls!.enablePan = active;
-        controls!.enableRotate = !active;
-        controls!.mouseButtons.LEFT = MOUSE.ROTATE;
-        controls!.mouseButtons.RIGHT = MOUSE.PAN;
 
         if (active) {
-          standardCameraPosition.copy(camera.position);
-          standardTarget.copy(controls!.target);
-          camera.position.copy(hldInitialCameraPosition);
-          camera.lookAt(controls!.target);
-          lockPolarAngle(camera, controls!);
           setVrButtonLabel("Make it boring");
         } else {
           restorePreviewCamera();
@@ -682,27 +621,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
             metaKey: event.metaKey,
           }));
         };
-        const forwardWheelEvent = (event: WheelEvent) => {
-          if (!renderer) return;
-          event.preventDefault();
-          renderer.domElement.dispatchEvent(new WheelEvent("wheel", {
-            bubbles: true,
-            cancelable: true,
-            deltaX: event.deltaX,
-            deltaY: event.deltaY,
-            deltaZ: event.deltaZ,
-            deltaMode: event.deltaMode,
-            ctrlKey: event.ctrlKey,
-            shiftKey: event.shiftKey,
-            altKey: event.altKey,
-            metaKey: event.metaKey,
-          }));
-        };
         hldPopupCanvas.addEventListener("pointerdown", forwardPointerEvent);
         hldPopupCanvas.addEventListener("pointermove", forwardPointerEvent);
         hldPopupCanvas.addEventListener("pointerup", forwardPointerEvent);
         hldPopupCanvas.addEventListener("pointercancel", forwardPointerEvent);
-        hldPopupCanvas.addEventListener("wheel", forwardWheelEvent, { passive: false });
         popup.document.body.appendChild(hldPopupCanvas);
       };
 
@@ -887,12 +809,6 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           }
         }
         const delta = clock.getDelta();
-        controls!.update();
-
-        // Enforce horizontal-only orbit: allow azimuth (theta) to change freely
-        // but snap camera back to the locked elevation (phi) every frame.
-        enforceLockedPolarAngle(camera, controls!);
-
         idleAnimatorRef.current?.update(delta);
         runtimeAnimator?.update(delta);
         currentVrm?.update(delta);
@@ -908,8 +824,19 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       disposed = true;
       renderer?.setAnimationLoop(null);
       if (resizeListener) window.removeEventListener("resize", resizeListener);
-      if (keydownListener) window.removeEventListener("keydown", keydownListener);
       if (lipSyncListener) window.removeEventListener(avatarLipSyncEventName, lipSyncListener);
+      if (renderer?.domElement && modelPointerDownListener) {
+        renderer.domElement.removeEventListener("pointerdown", modelPointerDownListener);
+      }
+      if (renderer?.domElement && modelPointerMoveListener) {
+        renderer.domElement.removeEventListener("pointermove", modelPointerMoveListener);
+      }
+      if (renderer?.domElement && modelPointerUpListener) {
+        renderer.domElement.removeEventListener("pointerup", modelPointerUpListener);
+      }
+      if (renderer?.domElement && modelPointerCancelListener) {
+        renderer.domElement.removeEventListener("pointercancel", modelPointerCancelListener);
+      }
       lkgControlsObserver?.disconnect();
       vrButtonTextObserver?.disconnect();
       lkgConfigChangeCleanup?.();
@@ -921,7 +848,6 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       idleAnimatorRef.current = undefined;
       loaderRef.current = undefined;
       runtimeAnimator?.dispose();
-      controls?.dispose();
       renderer?.dispose();
       renderer?.domElement.remove();
       shadowCanvas?.remove();
