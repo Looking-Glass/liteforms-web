@@ -76,7 +76,6 @@ lib/          Provider adapters, storage, avatar, speech, and API helpers
 public/       Bundled VRM/GLB/VRMA assets
 types/        Shared type declarations
 workers/      Browser workers for local model execution
-docs/         Technical notes and planning material
 ```
 
 ## Development Notes
