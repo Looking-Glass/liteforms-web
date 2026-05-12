@@ -18,9 +18,10 @@ import {
   IncrementalSpeechBuffer,
   rewriteDecimalsForTts,
   getSafeTextForTts,
-  createGoogleLiveBrowserSession
+  createGoogleLiveBrowserSession,
+  createOpenAiRealtimeBrowserSession
 } from "@/lib/speech";
-import type { GoogleLiveBrowserSession, RealtimeVoiceConfig, TtsResult } from "@/lib/speech";
+import type { GoogleLiveBrowserSession, OpenAiRealtimeBrowserSession, RealtimeVoiceConfig, TtsResult } from "@/lib/speech";
 import { DistilWhisperWorkerClient, KokoroWorkerClient } from "@/lib/speech/workerClient";
 import type { AsrConfig, AsrRealtimeSession, TtsConfig } from "@/lib/speech";
 import { dispatchAvatarLipSyncFrame } from "@/lib/avatar/lipSyncEvents";
@@ -95,6 +96,18 @@ function isBrowserLocalProvider(provider: LlmProviderId): boolean {
   return provider === "browser-local-gemma" || provider === "browser-local-qwen";
 }
 
+function isRealtimeVoiceProvider(provider: string): provider is "google-live" | "openai-realtime" {
+  return provider === "google-live" || provider === "openai-realtime";
+}
+
+function isActiveRealtimeVoiceConfig(config: RealtimeVoiceConfig): config is Exclude<RealtimeVoiceConfig, { provider: "none" }> {
+  return isRealtimeVoiceProvider(config.provider);
+}
+
+function realtimeProviderLabel(provider: "google-live" | "openai-realtime") {
+  return provider === "google-live" ? "Google Live" : "OpenAI Realtime";
+}
+
 function SettingsReadout({ label, value }: { label: string; value: string }) {
   return (
     <div className="settings-readout" role="group" aria-label={label}>
@@ -156,6 +169,14 @@ export function ChatPanel({
             voice: "Kore",
             websocketUrl: initialLlmConfig.baseUrl
           }
+        : initialLlmConfig?.provider === "openai-realtime"
+          ? {
+              provider: "openai-realtime",
+              credential: initialLlmConfig.credential,
+              model: initialLlmConfig.model,
+              voice: "coral",
+              websocketUrl: initialLlmConfig.baseUrl
+            }
         : { provider: "none" })
   );
   const [micMode, setMicMode] = useState<MicMode>("dynamic");
@@ -175,7 +196,7 @@ export function ChatPanel({
   }, [initialVrmFileName]);
 
   const asrSessionRef = useRef<AsrRealtimeSession | null>(null);
-  const googleLiveSessionRef = useRef<GoogleLiveBrowserSession | null>(null);
+  const googleLiveSessionRef = useRef<GoogleLiveBrowserSession | OpenAiRealtimeBrowserSession | null>(null);
   const googleLivePlaybackCtxRef = useRef<AudioContext | null>(null);
   const micSessionIdRef = useRef(0);
   const microphoneStreamRef = useRef<MediaStream | null>(null);
@@ -199,7 +220,7 @@ export function ChatPanel({
   const activeLocalModelIds = useMemo<Set<LocalModelId>>(() => {
     const ids = new Set<LocalModelId>();
     const normalizedTtsConfig = normalizeTtsConfig(ttsConfig);
-    const usesRealtimeVoice = config.provider === "google-live" || realtimeVoiceConfig.provider === "google-live";
+    const usesRealtimeVoice = isRealtimeVoiceProvider(config.provider) || isRealtimeVoiceProvider(realtimeVoiceConfig.provider);
     if (config.provider === "browser-local-gemma") ids.add("gemma");
     if (config.provider === "browser-local-qwen") ids.add("qwen-local");
     if (!usesRealtimeVoice && normalizedTtsConfig.provider === "kokoro") ids.add("kokoro");
@@ -370,7 +391,7 @@ export function ChatPanel({
     const llmProvider = config.provider;
     const wantGemma = llmProvider === "browser-local-gemma";
     const wantQwen = llmProvider === "browser-local-qwen";
-    const usesRealtimeVoice = llmProvider === "google-live" || realtimeVoiceConfig.provider === "google-live";
+    const usesRealtimeVoice = isRealtimeVoiceProvider(llmProvider) || isRealtimeVoiceProvider(realtimeVoiceConfig.provider);
     const wantKokoro = !usesRealtimeVoice && normalizedTtsConfig.provider === "kokoro";
     const wantDistilWhisper = !usesRealtimeVoice && normalizedAsrConfig.provider === "distil-whisper";
 
@@ -516,14 +537,14 @@ export function ChatPanel({
     setStatus("streaming");
 
     const nextMessages = [...messages, { role: "user" as const, content }];
-    if (config.provider === "google-live") {
+    if (isRealtimeVoiceProvider(config.provider)) {
       setMessages(nextMessages);
       const session = googleLiveSessionRef.current;
       if (session?.isActive()) {
         session.sendText(content);
         setStatus("idle");
       } else {
-        setError("Start Google Live before sending a message with the Google Live provider.");
+        setError(`Start ${realtimeProviderLabel(config.provider)} before sending a message with the ${realtimeProviderLabel(config.provider)} provider.`);
         setStatus("error");
       }
       return;
@@ -533,7 +554,7 @@ export function ChatPanel({
     try {
       const normalizedConfig = normalizeProviderConfig(config);
       const adapter = createLlmAdapter({ config: normalizedConfig, localGemmaWorker: localGemmaWorkerRef.current });
-      const usesRealtimeVoice = realtimeVoiceConfig.provider === "google-live";
+      const usesRealtimeVoice = isRealtimeVoiceProvider(realtimeVoiceConfig.provider);
       const ttsAdapter = usesRealtimeVoice ? null : createTtsAdapter({ config: ttsConfig, worker: kokoroWorkerRef.current });
 
       let responseText = "";
@@ -593,7 +614,7 @@ export function ChatPanel({
       const queueSegment = (segment: string) => {
         const prepared = rewriteDecimalsForTts(segment);
         if (!ttsAdapter) {
-            setLastTtsDebug("Google Live handles voice in its realtime session.");
+            setLastTtsDebug("Realtime voice handles speech in its live session.");
           return;
         }
         setLastTtsDebug(`TTS: "${prepared}"`);
@@ -682,7 +703,7 @@ export function ChatPanel({
   }
 
   async function testAsrProvider() {
-    if (realtimeVoiceConfig.provider === "google-live") return;
+    if (isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) return;
     if (!lastAudioRef.current) {
       setSpeechError("Record microphone audio before testing transcription.");
       setSpeechStatus("error");
@@ -695,24 +716,25 @@ export function ChatPanel({
   }
 
   async function toggleGoogleLive() {
-    if (realtimeVoiceConfig.provider !== "google-live") return;
+    if (!isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) return;
+    const providerLabel = realtimeProviderLabel(realtimeVoiceConfig.provider);
     if (googleLiveSessionRef.current?.isActive()) {
       googleLiveSessionRef.current.stop();
       googleLiveSessionRef.current = null;
       void googleLivePlaybackCtxRef.current?.close();
       googleLivePlaybackCtxRef.current = null;
       setSpeechStatus("idle");
-      setLastAsrDebug("Google Live: stopped");
+      setLastAsrDebug(`${providerLabel}: stopped`);
       return;
     }
     if (!realtimeVoiceConfig.credential) {
-      setSpeechError("Google Live credential is required.");
+      setSpeechError(`${providerLabel} credential is required.`);
       setSpeechStatus("error");
       return;
     }
     setSpeechError("");
     setTranscript("");
-    setLastAsrDebug("Google Live: connecting...");
+    setLastAsrDebug(`${providerLabel}: connecting...`);
     try {
       const stream = await getMicrophoneStream();
 
@@ -761,7 +783,10 @@ export function ChatPanel({
         });
       };
 
-      const session = createGoogleLiveBrowserSession({
+      const sessionFactory = realtimeVoiceConfig.provider === "google-live"
+        ? createGoogleLiveBrowserSession
+        : createOpenAiRealtimeBrowserSession;
+      const session = sessionFactory({
         config: {
           ...realtimeVoiceConfig,
           instructions: buildPersonaPrompt({
@@ -769,11 +794,11 @@ export function ChatPanel({
             pronouns: character.pronouns,
             personality: character.personality
           })
-        },
+        } as never,
         // Google sends cumulative partials — replace, don't accumulate.
         onUserTranscript: (text, final) => {
           setTranscript(text);
-          setLastAsrDebug(`Google Live heard: "${text}"`);
+          setLastAsrDebug(`${providerLabel} heard: "${text}"`);
           if (final) {
             const msg = text.trim();
             if (msg) setMessages((prev) => [...prev, { role: "user" as const, content: msg }]);
@@ -790,7 +815,7 @@ export function ChatPanel({
             }
             return [...next, { role: "assistant" as const, content: text }];
           });
-          setLastAsrDebug(`Google Live said: "${text}"`);
+          setLastAsrDebug(`${providerLabel} said: "${text}"`);
         },
         onAudio: (audio) => {
           scheduleAudioChunk(audio);
@@ -804,9 +829,9 @@ export function ChatPanel({
       googleLiveSessionRef.current = session;
       session.start(stream);
       setSpeechStatus("listening");
-      setLastAsrDebug("Google Live: listening");
+      setLastAsrDebug(`${providerLabel}: listening`);
     } catch (caught) {
-      setSpeechError(caught instanceof Error ? caught.message : "Google Live failed to start.");
+      setSpeechError(caught instanceof Error ? caught.message : `${providerLabel} failed to start.`);
       setSpeechStatus("error");
     }
   }
@@ -953,8 +978,9 @@ export function ChatPanel({
   }
 
   function getMicButtonLabel() {
-    if (realtimeVoiceConfig.provider === "google-live") {
-      return speechStatus === "listening" ? "Stop Google Live" : "Start Google Live";
+    if (isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) {
+      const label = realtimeProviderLabel(realtimeVoiceConfig.provider);
+      return speechStatus === "listening" ? `Stop ${label}` : `Start ${label}`;
     }
     if (speechStatus === "listening") {
       if (micMode === "dynamic") return "Listening for pause";
@@ -965,7 +991,7 @@ export function ChatPanel({
   }
 
   function getMicButtonModeText() {
-    if (realtimeVoiceConfig.provider === "google-live") return speechStatus === "listening" ? "REC" : "LIVE";
+    if (isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) return speechStatus === "listening" ? "REC" : "LIVE";
     if (speechStatus === "listening") return "REC";
     if (micMode === "toggle") return "TAP";
     if (micMode === "dynamic") return "AUTO";
@@ -973,7 +999,7 @@ export function ChatPanel({
   }
 
   function handleMicPointerDown(event: PointerEvent<HTMLButtonElement>) {
-    if (realtimeVoiceConfig.provider === "google-live") return; // handled by click
+    if (isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) return; // handled by click
     if (micMode !== "hold") return;
     if (status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking") return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -981,7 +1007,7 @@ export function ChatPanel({
   }
 
   function handleMicClick() {
-    if (realtimeVoiceConfig.provider === "google-live") {
+    if (isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) {
       void toggleGoogleLive();
       return;
     }
@@ -1131,10 +1157,10 @@ export function ChatPanel({
             <SettingsReadout label="Model provider" value={getProviderLabel(config.provider)} />
             <SettingsReadout label="Model" value={config.model} />
           </div>
-          {config.provider === "google-live" || realtimeVoiceConfig.provider === "google-live" ? (
+          {isRealtimeVoiceProvider(config.provider) || isActiveRealtimeVoiceConfig(realtimeVoiceConfig) ? (
             <div className="speech-settings">
-              <SettingsReadout label="Voice provider" value="Included in Google Live" />
-              <SettingsReadout label="Speech input provider" value="Included in Google Live" />
+              <SettingsReadout label="Voice provider" value={`Included in ${isActiveRealtimeVoiceConfig(realtimeVoiceConfig) ? realtimeProviderLabel(realtimeVoiceConfig.provider) : getProviderLabel(config.provider)}`} />
+              <SettingsReadout label="Speech input provider" value={`Included in ${isActiveRealtimeVoiceConfig(realtimeVoiceConfig) ? realtimeProviderLabel(realtimeVoiceConfig.provider) : getProviderLabel(config.provider)}`} />
             </div>
           ) : (
             <div className="speech-settings">
@@ -1187,7 +1213,7 @@ export function ChatPanel({
                   className="btn-ghost"
                   style={{ flex: 1, justifyContent: "center" }}
                   onClick={testTtsProvider}
-                  disabled={config.provider === "google-live" || speechStatus === "testing" || speechStatus === "speaking"}
+                  disabled={isRealtimeVoiceProvider(config.provider) || speechStatus === "testing" || speechStatus === "speaking"}
                 >
                   Test voice
                 </button>
@@ -1201,7 +1227,7 @@ export function ChatPanel({
                   Test STT
                 </button>
               </div>
-              {realtimeVoiceConfig.provider === "google-live" ? (
+              {isActiveRealtimeVoiceConfig(realtimeVoiceConfig) ? (
                 <button
                   type="button"
                   className="btn-ghost"
@@ -1209,7 +1235,7 @@ export function ChatPanel({
                   onClick={toggleGoogleLive}
                   disabled={status === "streaming" || speechStatus === "testing" || speechStatus === "speaking"}
                 >
-                  {googleLiveSessionRef.current?.isActive() ? "Stop Google Live" : "Start Google Live"}
+                  {googleLiveSessionRef.current?.isActive() ? `Stop ${realtimeProviderLabel(realtimeVoiceConfig.provider)}` : `Start ${realtimeProviderLabel(realtimeVoiceConfig.provider)}`}
                 </button>
               ) : null}
 
@@ -1249,8 +1275,8 @@ export function ChatPanel({
             aria-label={getMicButtonLabel()}
             onPointerDown={handleMicPointerDown}
             onClick={handleMicClick}
-            onPointerUp={() => { if (realtimeVoiceConfig.provider !== "google-live" && micMode === "hold") stopMicRecording(); }}
-            onPointerLeave={() => { if (realtimeVoiceConfig.provider !== "google-live" && micMode === "hold" && speechStatus === "listening") stopMicRecording(); }}
+            onPointerUp={() => { if (!isActiveRealtimeVoiceConfig(realtimeVoiceConfig) && micMode === "hold") stopMicRecording(); }}
+            onPointerLeave={() => { if (!isActiveRealtimeVoiceConfig(realtimeVoiceConfig) && micMode === "hold" && speechStatus === "listening") stopMicRecording(); }}
             disabled={status === "streaming" || speechStatus === "transcribing" || speechStatus === "testing" || speechStatus === "speaking"}
           >
             <span style={{ fontSize: "16px", lineHeight: 1 }}>{speechStatus === "listening" ? "◉" : "🎙"}</span>
@@ -1258,7 +1284,7 @@ export function ChatPanel({
               {getMicButtonModeText()}
             </span>
           </button>
-          {realtimeVoiceConfig.provider !== "google-live" ? (
+          {!isActiveRealtimeVoiceConfig(realtimeVoiceConfig) ? (
             <>
               <button
                 type="button"

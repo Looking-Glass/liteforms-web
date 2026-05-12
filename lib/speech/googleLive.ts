@@ -1,3 +1,5 @@
+import type { OpenAiRealtimeVoiceConfig } from "./openAiRealtime";
+
 export type GoogleLiveVoiceConfig = {
   provider: "google-live";
   credential?: string;
@@ -9,7 +11,7 @@ export type GoogleLiveVoiceConfig = {
   ephemeralToken?: string;
 };
 
-export type RealtimeVoiceConfig = { provider: "none" } | GoogleLiveVoiceConfig;
+export type RealtimeVoiceConfig = { provider: "none" } | GoogleLiveVoiceConfig | OpenAiRealtimeVoiceConfig;
 
 export type GoogleLiveClientMessage =
   | { type: "setup"; config: ReturnType<typeof normalizeGoogleLiveVoiceConfig> }

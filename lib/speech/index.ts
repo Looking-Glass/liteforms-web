@@ -6,6 +6,7 @@ export * from "./config";
 export * from "./googleLive";
 export * from "./lipSync";
 export * from "./microphone";
+export * from "./openAiRealtime";
 export * from "./providerOptions";
 export * from "./tts";
 export * from "./types";

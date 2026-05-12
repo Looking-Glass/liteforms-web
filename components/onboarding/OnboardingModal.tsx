@@ -39,6 +39,24 @@ export type OnboardingModalProps = {
 
 const credentialProviders = CREDENTIAL_PROVIDER_IDS;
 
+function isRealtimeVoiceProvider(provider: string): provider is "google-live" | "openai-realtime" {
+  return provider === "google-live" || provider === "openai-realtime";
+}
+
+function isActiveRealtimeVoiceConfig(config: RealtimeVoiceConfig): config is Exclude<RealtimeVoiceConfig, { provider: "none" }> {
+  return isRealtimeVoiceProvider(config.provider);
+}
+
+function defaultRealtimeVoice(provider: "google-live" | "openai-realtime", option: { defaultModel: string; defaultVoice?: string; defaultBaseUrl?: string }, credential?: string): RealtimeVoiceConfig {
+  return {
+    provider,
+    credential,
+    model: option.defaultModel,
+    voice: option.defaultVoice,
+    websocketUrl: option.defaultBaseUrl
+  };
+}
+
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
     <div className="onboarding-step-indicator" aria-label={`Step ${current} of ${total}`}>
@@ -95,6 +113,14 @@ export function OnboardingModal({
             voice: "Kore",
             websocketUrl: visibleInitialLlmConfig.baseUrl
           }
+        : visibleInitialLlmConfig?.provider === "openai-realtime"
+          ? {
+              provider: "openai-realtime",
+              credential: visibleInitialLlmConfig.credential,
+              model: visibleInitialLlmConfig.model,
+              voice: "coral",
+              websocketUrl: visibleInitialLlmConfig.baseUrl
+            }
         : { provider: "none" })
   );
   const [localAuthStatus, setLocalAuthStatus] = useState<LocalAuthLoginResult | null>(null);
@@ -103,15 +129,12 @@ export function OnboardingModal({
 
   function updateLlmProvider(providerId: LlmProviderId) {
     const option = llmProviderOptions.find((p) => p.id === providerId) ?? llmProviderOptions[0];
-    if (option.id === "google-live") {
-      const credential = config.provider === "google" ? config.credential : undefined;
-      setRealtimeVoiceConfig({
-        provider: "google-live",
-        credential,
-        model: option.defaultModel,
-        voice: option.defaultVoice,
-        websocketUrl: option.defaultBaseUrl
-      });
+    if (isRealtimeVoiceProvider(option.id)) {
+      const credential =
+        (option.id === "google-live" && config.provider === "google") || (option.id === "openai-realtime" && config.provider === "openai")
+          ? config.credential
+          : undefined;
+      setRealtimeVoiceConfig(defaultRealtimeVoice(option.id, option, credential));
       setConfig({
         provider: option.id,
         credential,
@@ -174,7 +197,7 @@ export function OnboardingModal({
   }
 
   function handleCustomStart() {
-    const usesRealtimeVoice = config.provider === "google-live" || realtimeVoiceConfig.provider === "google-live";
+    const usesRealtimeVoice = isRealtimeVoiceProvider(config.provider) || isActiveRealtimeVoiceConfig(realtimeVoiceConfig);
     const needsLocalModels =
       config.provider === "browser-local-gemma" ||
       config.provider === "browser-local-qwen" ||
@@ -193,7 +216,7 @@ export function OnboardingModal({
   }
 
   function submitCustomConfig() {
-    if (config.provider !== "google-live" && realtimeVoiceConfig.provider === "none") {
+    if (!isRealtimeVoiceProvider(config.provider) && realtimeVoiceConfig.provider === "none") {
       onUseCustom(config, ttsConfig, asrConfig);
       return;
     }
@@ -379,7 +402,7 @@ export function OnboardingModal({
                     value={config.model}
                     onChange={(e) => {
                       setConfig({ ...config, model: e.target.value });
-                      if (config.provider === "google-live" && realtimeVoiceConfig.provider === "google-live") {
+                      if (isRealtimeVoiceProvider(config.provider) && isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) {
                         setRealtimeVoiceConfig({ ...realtimeVoiceConfig, model: e.target.value });
                       }
                     }}
@@ -393,7 +416,7 @@ export function OnboardingModal({
                     value={config.model}
                     onChange={(e) => {
                       setConfig({ ...config, model: e.target.value });
-                      if (config.provider === "google-live" && realtimeVoiceConfig.provider === "google-live") {
+                      if (isRealtimeVoiceProvider(config.provider) && isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) {
                         setRealtimeVoiceConfig({ ...realtimeVoiceConfig, model: e.target.value });
                       }
                     }}
@@ -401,7 +424,7 @@ export function OnboardingModal({
                 )}
               </label>
             )}
-            {config.provider === "google-live" && providerMeta.voices && realtimeVoiceConfig.provider === "google-live" && (
+            {isRealtimeVoiceProvider(config.provider) && providerMeta.voices && isActiveRealtimeVoiceConfig(realtimeVoiceConfig) && (
               <label>
                 Voice
                 <select
@@ -421,7 +444,7 @@ export function OnboardingModal({
                   value={config.baseUrl ?? providerMeta.defaultBaseUrl ?? ""}
                   onChange={(e) => {
                     setConfig({ ...config, baseUrl: e.target.value });
-                    if (config.provider === "google-live" && realtimeVoiceConfig.provider === "google-live") {
+                    if (isRealtimeVoiceProvider(config.provider) && isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) {
                       setRealtimeVoiceConfig({ ...realtimeVoiceConfig, websocketUrl: e.target.value });
                     }
                   }}
@@ -430,14 +453,20 @@ export function OnboardingModal({
             )}
             {showCredential && (
               <label>
-                {config.provider === "openclaw" ? OPENCLAW_GATEWAY_TOKEN_LABEL : config.provider === "google-live" ? "Google Live credential" : "Credential"}
+                {config.provider === "openclaw"
+                  ? OPENCLAW_GATEWAY_TOKEN_LABEL
+                  : config.provider === "google-live"
+                    ? "Google Live credential"
+                    : config.provider === "openai-realtime"
+                      ? "OpenAI Realtime credential"
+                      : "Credential"}
                 <input
                   aria-label={config.provider === "openclaw" ? OPENCLAW_GATEWAY_TOKEN_LABEL : undefined}
                   type="password"
                   value={config.credential ?? ""}
                   onChange={(e) => {
                     setConfig({ ...config, credential: e.target.value });
-                    if (config.provider === "google-live" && realtimeVoiceConfig.provider === "google-live") {
+                    if (isRealtimeVoiceProvider(config.provider) && isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) {
                       setRealtimeVoiceConfig({ ...realtimeVoiceConfig, credential: e.target.value });
                     }
                   }}
@@ -494,14 +523,14 @@ export function OnboardingModal({
               type="button"
               className="onboarding-primary"
               onClick={() => {
-                if (config.provider === "google-live") {
+                if (isRealtimeVoiceProvider(config.provider)) {
                   handleCustomStart();
                   return;
                 }
                 setStep("tts");
               }}
             >
-              {config.provider === "google-live" ? (mode === "configure" ? "Save" : "Start Liteforms") : "Next"}
+              {isRealtimeVoiceProvider(config.provider) ? (mode === "configure" ? "Save" : "Start Liteforms") : "Next"}
             </button>
           </div>
         </div>

@@ -2,6 +2,7 @@ export type LlmProviderId =
   | "browser-local-gemma"
   | "browser-local-qwen"
   | "openai"
+  | "openai-realtime"
   | "openai-codex"
   | "anthropic"
   | "claude-cli"

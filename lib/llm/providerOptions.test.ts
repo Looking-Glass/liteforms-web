@@ -59,6 +59,20 @@ describe("LLM_PROVIDER_OPTIONS", () => {
     expect(CREDENTIAL_PROVIDER_IDS).toContain("google-live");
   });
 
+  it("registers OpenAI Realtime as an end-to-end LLM provider", () => {
+    const option = LLM_PROVIDER_OPTIONS.find((provider) => provider.id === "openai-realtime");
+    expect(option).toMatchObject({
+      label: "OpenAI Realtime (includes TTS and STT)",
+      defaultModel: "gpt-realtime-2",
+      defaultBaseUrl: "wss://api.openai.com/v1/realtime",
+      defaultVoice: "coral",
+      tested: true
+    });
+    expect(option?.models?.map((model) => model.id)).toContain("gpt-realtime-2");
+    expect(option?.voices?.map((voice) => voice.id)).toEqual(expect.arrayContaining(["coral", "marin", "verse"]));
+    expect(CREDENTIAL_PROVIDER_IDS).toContain("openai-realtime");
+  });
+
   it("audits every provider for Vercel deployment support", () => {
     expect(Object.keys(LLM_PROVIDER_VERCEL_AUDIT).sort()).toEqual(
       LLM_PROVIDER_OPTIONS.map((provider) => provider.id).sort()
@@ -88,6 +102,7 @@ describe("LLM_PROVIDER_OPTIONS", () => {
       "anthropic",
       "openai-codex",
       "openai",
+      "openai-realtime",
       "google-live"
     ]));
   });

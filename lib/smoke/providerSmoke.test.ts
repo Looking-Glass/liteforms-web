@@ -20,13 +20,14 @@ describe("provider smoke test harness", () => {
     });
   });
 
-  it("includes cloud LLM, TTS, STT, and Google Live providers while skipping local-only providers", () => {
+  it("includes cloud LLM, TTS, STT, and realtime voice providers while skipping local-only providers", () => {
     const cases = buildSmokeProviderCases();
     const ids = cases.map((testCase) => `${testCase.kind}:${testCase.provider}`);
 
     expect(ids).toContain("llm:openai");
     expect(ids).toContain("llm:anthropic");
     expect(ids).toContain("llm:google-live");
+    expect(ids).toContain("llm:openai-realtime");
     expect(ids).toContain("tts:elevenlabs");
     expect(ids).toContain("tts:google");
     expect(ids).toContain("stt:mistral");
@@ -36,6 +37,51 @@ describe("provider smoke test harness", () => {
     expect(ids).not.toContain("llm:openclaw");
     expect(ids).not.toContain("tts:kokoro");
     expect(ids).not.toContain("stt:distil-whisper");
+  });
+
+  it("runs an OpenAI Realtime smoke call through a WebSocket", async () => {
+    const openAiRealtime = buildSmokeProviderCases().find((testCase) => testCase.kind === "llm" && testCase.provider === "openai-realtime");
+    expect(openAiRealtime).toBeDefined();
+
+    class MockWebSocket {
+      static instances: MockWebSocket[] = [];
+      sent: string[] = [];
+      listeners = new Map<string, Array<(event: unknown) => void>>();
+      readyState = 1;
+
+      constructor(public url: string, public protocols?: string | string[]) {
+        MockWebSocket.instances.push(this);
+        setTimeout(() => this.emit("open", {}), 0);
+      }
+
+      addEventListener(type: string, handler: (event: unknown) => void) {
+        this.listeners.set(type, [...(this.listeners.get(type) ?? []), handler]);
+      }
+
+      send(data: string) {
+        this.sent.push(data);
+        if (data.includes("response.create")) {
+          setTimeout(() => this.emit("message", { data: JSON.stringify({ type: "response.output_audio_transcript.delta", delta: "OK" }) }), 0);
+        }
+      }
+
+      close() {
+        this.readyState = 3;
+      }
+
+      emit(type: string, event: unknown) {
+        for (const handler of this.listeners.get(type) ?? []) handler(event);
+      }
+    }
+
+    await expect(runSmokeProviderCase(openAiRealtime!, {
+      env: { OPENAI_API_KEY: "sk-test" },
+      WebSocketCtor: MockWebSocket as unknown as typeof WebSocket
+    })).resolves.toMatchObject({ skipped: false });
+
+    expect(MockWebSocket.instances[0].url).toBe("wss://api.openai.com/v1/realtime?model=gpt-realtime-2");
+    expect(MockWebSocket.instances[0].protocols).toEqual(["realtime", "openai-insecure-api-key.sk-test"]);
+    expect(MockWebSocket.instances[0].sent.some((message) => message.includes("session.update"))).toBe(true);
   });
 
   it("resolves prefixed Liteforms env names before shared provider env names", () => {

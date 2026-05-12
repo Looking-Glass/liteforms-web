@@ -65,6 +65,23 @@ export const GOOGLE_LIVE_VOICE_OPTIONS: ProviderVoiceOption[] = [
   { id: "Sulafat", label: "Sulafat - Warm" }
 ];
 
+export const OPENAI_REALTIME_MODEL_OPTIONS: ProviderModelOption[] = [
+  { id: "gpt-realtime-2", label: "GPT Realtime 2" },
+  { id: "gpt-realtime", label: "GPT Realtime" }
+];
+
+export const OPENAI_REALTIME_VOICE_OPTIONS: ProviderVoiceOption[] = [
+  { id: "alloy", label: "Alloy" },
+  { id: "ash", label: "Ash" },
+  { id: "ballad", label: "Ballad" },
+  { id: "cedar", label: "Cedar" },
+  { id: "coral", label: "Coral" },
+  { id: "echo", label: "Echo" },
+  { id: "marin", label: "Marin" },
+  { id: "sage", label: "Sage" },
+  { id: "verse", label: "Verse" }
+];
+
 export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "anthropic",
@@ -96,6 +113,16 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
       { id: "gpt-5.4-mini", label: "GPT-5.4 mini" },
       { id: "gpt-5.4-nano", label: "GPT-5.4 nano" }
     ]
+  },
+  {
+    id: "openai-realtime",
+    label: "OpenAI Realtime (includes TTS and STT)",
+    tested: true,
+    defaultModel: "gpt-realtime-2",
+    defaultBaseUrl: "wss://api.openai.com/v1/realtime",
+    defaultVoice: "coral",
+    models: OPENAI_REALTIME_MODEL_OPTIONS,
+    voices: OPENAI_REALTIME_VOICE_OPTIONS
   },
   {
     id: "openai-codex",
@@ -296,6 +323,7 @@ export const LLM_PROVIDER_VERCEL_AUDIT = {
   "browser-local-gemma": { support: "supported", reason: "Runs entirely in the user's browser." },
   "browser-local-qwen": { support: "supported", reason: "Runs entirely in the user's browser." },
   openai: { support: "supported", reason: "Uses a hosted API endpoint." },
+  "openai-realtime": { support: "supported", reason: "Uses OpenAI's hosted Realtime WebSocket endpoint from the browser." },
   "openai-codex": {
     support: "supported",
     reason: "Uses ChatGPT device authorization and the hosted Codex backend; serverless auth persistence may need hardening."
@@ -343,6 +371,7 @@ export function isVercelDeploymentFromEnv() {
 /** Provider IDs that require an API key or credential. */
 export const CREDENTIAL_PROVIDER_IDS: LlmProviderId[] = [
   "openai",
+  "openai-realtime",
   "anthropic",
   "google",
   "google-live",

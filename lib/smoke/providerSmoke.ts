@@ -10,6 +10,12 @@ import {
   buildGoogleLiveWebSocketUrl,
   GOOGLE_LIVE_DEFAULT_VOICE
 } from "@/lib/speech/googleLive";
+import {
+  buildOpenAiRealtimeSessionUpdateMessage,
+  buildOpenAiRealtimeWebSocketProtocols,
+  buildOpenAiRealtimeWebSocketUrl,
+  OPENAI_REALTIME_DEFAULT_VOICE
+} from "@/lib/speech/openAiRealtime";
 import { STT_PROVIDER_OPTIONS, TTS_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
 import type { AsrConfig, AsrProviderId, TtsConfig, TtsProviderId } from "@/lib/speech/types";
 
@@ -47,6 +53,7 @@ type EnvMap = Record<string, string | undefined>;
 
 const SHARED_ENV_NAMES: Record<string, string[]> = {
   openai: ["OPENAI_API_KEY"],
+  "openai-realtime": ["OPENAI_API_KEY"],
   anthropic: ["ANTHROPIC_API_KEY"],
   google: ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
   "google-live": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
@@ -182,6 +189,12 @@ export async function runSmokeProviderCase(
         options.WebSocketCtor
       );
     }
+    if (testCase.provider === "openai-realtime") {
+      return runOpenAiRealtimeSmoke(
+        { ...testCase.config, provider: "openai-realtime", credential: credential.value, voice: OPENAI_REALTIME_DEFAULT_VOICE },
+        options.WebSocketCtor
+      );
+    }
     const config = { ...testCase.config, credential: credential.value };
     const text = await collectText(
       createLlmAdapter({ config, fetch: options.fetch ?? fetch }).streamText({
@@ -312,6 +325,85 @@ async function runGoogleLiveSmoke(
   });
 
   return { skipped: false, detail: "Google Live WebSocket returned realtime content." };
+}
+
+async function runOpenAiRealtimeSmoke(
+  config: Omit<BaseProviderConfig, "provider"> & { provider: "openai-realtime"; voice: string },
+  WebSocketCtor: typeof WebSocket = WebSocket
+): Promise<SmokeProviderResult> {
+  if (!WebSocketCtor) throw new Error("OpenAI Realtime smoke test requires a WebSocket implementation.");
+
+  await new Promise<void>((resolve, reject) => {
+    const realtimeConfig = {
+      provider: "openai-realtime" as const,
+      credential: config.credential,
+      model: config.model,
+      voice: config.voice,
+      websocketUrl: config.baseUrl
+    };
+    const socket = new WebSocketCtor(
+      buildOpenAiRealtimeWebSocketUrl(realtimeConfig),
+      buildOpenAiRealtimeWebSocketProtocols(realtimeConfig)
+    );
+    let settled = false;
+    const receivedMessages: string[] = [];
+    const timeout = setTimeout(() => {
+      socket.close();
+      reject(new Error(`OpenAI Realtime smoke test timed out. Received: ${receivedMessages.join(" | ") || "no messages"}`));
+    }, 30000);
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      socket.close();
+      if (error) reject(error);
+      else resolve();
+    };
+
+    socket.addEventListener("open", () => {
+      socket.send(JSON.stringify(buildOpenAiRealtimeSessionUpdateMessage({
+        ...realtimeConfig,
+        instructions: "Reply with exactly the word OK."
+      })));
+      socket.send(JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "Reply with exactly the word OK." }]
+        }
+      }));
+      socket.send(JSON.stringify({
+        type: "response.create",
+        response: { output_modalities: ["audio"] }
+      }));
+    });
+    socket.addEventListener("message", (event) => {
+      void readWebSocketMessageText(event.data)
+        .then((text) => {
+          receivedMessages.push(text.slice(0, 300));
+          const payload = JSON.parse(text) as {
+            type?: string;
+            delta?: string;
+            transcript?: string;
+            error?: { message?: string };
+          };
+          if (payload.type === "error") finish(new Error(payload.error?.message ?? "OpenAI Realtime WebSocket failed."));
+          if (
+            (payload.type === "response.output_audio.delta" || payload.type === "response.audio.delta") ||
+            ((payload.type === "response.output_audio_transcript.delta" || payload.type === "response.audio_transcript.delta") && payload.delta) ||
+            ((payload.type === "response.output_audio_transcript.done" || payload.type === "response.audio_transcript.done") && payload.transcript)
+          ) {
+            finish();
+          }
+        })
+        .catch((error) => finish(error instanceof Error ? error : new Error(String(error))));
+    });
+    socket.addEventListener("error", () => finish(new Error("OpenAI Realtime WebSocket failed.")));
+  });
+
+  return { skipped: false, detail: "OpenAI Realtime WebSocket returned realtime content." };
 }
 
 async function readWebSocketMessageText(data: unknown) {

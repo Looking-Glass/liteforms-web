@@ -18,11 +18,11 @@ const CLOUD_PROVIDER_IDS = new Set<string>([
 
 export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
   const config = normalizeProviderConfig(input.config);
-  if (config.provider === "google-live") {
+  if (config.provider === "google-live" || config.provider === "openai-realtime") {
     return {
-      id: "google-live",
+      id: config.provider,
       async *streamText() {
-        throw new Error("Google Live uses a realtime voice session instead of the text LLM adapter.");
+        throw new Error(`${config.provider} uses a realtime voice session instead of the text LLM adapter.`);
       }
     };
   }
@@ -234,7 +234,7 @@ function formatProviderResponseError(response: Response, config: BaseProviderCon
 
 export function providerNeedsCredential(config: BaseProviderConfig) {
   return [
-    "openai", "anthropic", "openrouter", "openclaw",
+    "openai", "openai-realtime", "anthropic", "openrouter", "openclaw",
     "google", "google-live", "xai", "mistral", "cerebras", "nvidia", "groq", "together", "fireworks", "qwen"
   ].includes(config.provider);
 }
