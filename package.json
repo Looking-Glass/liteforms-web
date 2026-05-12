@@ -8,6 +8,7 @@
     "build": "next build",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:smoke:providers": "vitest run --config vitest.smoke.config.ts lib/smoke/providerSmoke.smoke.test.ts",
     "test:watch": "vitest"
   },
   "dependencies": {

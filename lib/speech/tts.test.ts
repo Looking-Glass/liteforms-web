@@ -207,13 +207,13 @@ describe("TTS adapters", () => {
   it("calls ElevenLabs TTS directly from the browser", async () => {
     const fetchMock = vi.fn(async () => new Response(new ArrayBuffer(3), { headers: { "content-type": "audio/mpeg" } }));
     const adapter = createTtsAdapter({
-      config: { provider: "elevenlabs", credential: "el-key", voiceId: "Rachel" },
+      config: { provider: "elevenlabs", credential: "el-key", voiceId: "CwhRBWXzGAHq8TQ4Fs17" },
       fetch: fetchMock
     });
 
     await expect(adapter.synthesize("Hi")).resolves.toMatchObject({ mimeType: "audio/mpeg" });
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.elevenlabs.io/v1/text-to-speech/Rachel/stream",
+      "https://api.elevenlabs.io/v1/text-to-speech/CwhRBWXzGAHq8TQ4Fs17?output_format=mp3_22050_32",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({ "xi-api-key": "el-key" })

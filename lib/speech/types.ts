@@ -61,6 +61,7 @@ export type ElevenLabsTtsConfig = {
   seed?: number;
   languageCode?: string;
   applyTextNormalization?: "auto" | "on" | "off";
+  outputFormat?: string;
 };
 
 export type DeepgramTtsConfig = {

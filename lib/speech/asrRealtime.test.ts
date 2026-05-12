@@ -404,6 +404,27 @@ describe("realtime ASR session", () => {
     expect(onError).toHaveBeenCalledWith(error);
     expect(final).not.toHaveBeenCalled();
   });
+
+  it("uses chunked REST transcription for cloud providers when no realtime relay is available", async () => {
+    const transcribe = vi.fn().mockResolvedValue({ text: "deepgram heard me" });
+    vi.mocked(createAsrAdapter).mockReturnValue({ provider: "deepgram", transcribe });
+    const WebSocketCtor = vi.fn();
+    vi.stubGlobal("WebSocket", WebSocketCtor);
+
+    const session = createAsrRealtimeSession({
+      config: { provider: "deepgram", credential: "dg-key" },
+      onPartial: vi.fn()
+    });
+
+    session.start({} as MediaStream);
+    expect(WebSocketCtor).not.toHaveBeenCalled();
+    expect(MockMediaRecorder.latest?.startMs).toBe(DEFAULT_ASR_REALTIME_CHUNK_MS);
+
+    MockMediaRecorder.latest!.emitData("audio");
+    await tick();
+
+    expect(transcribe).toHaveBeenCalledWith(expect.any(Blob));
+  });
 });
 
 describe("transcript overlap merge", () => {

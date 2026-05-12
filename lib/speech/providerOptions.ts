@@ -14,6 +14,7 @@ export type TtsProviderOption = {
   /** Static voice list → renders a <select>; absent → renders a <input> or nothing. */
   voices?: SpeechProviderVoiceOption[];
   needsCredential: boolean;
+  tested: boolean;
 };
 
 export type AsrProviderOption = {
@@ -23,9 +24,10 @@ export type AsrProviderOption = {
   defaultModel?: string;
   models?: SpeechProviderModelOption[];
   needsCredential: boolean;
+  tested: boolean;
 };
 
-export const TTS_PROVIDER_OPTIONS: TtsProviderOption[] = [
+const RAW_TTS_PROVIDER_OPTIONS: Array<Omit<TtsProviderOption, "tested">> = [
   {
     id: "kokoro",
     label: "Kokoro (local)",
@@ -34,11 +36,12 @@ export const TTS_PROVIDER_OPTIONS: TtsProviderOption[] = [
   {
     id: "elevenlabs",
     label: "ElevenLabs",
-    defaultBaseUrl: "https://api.elevenlabs.io",
-    defaultModel: "eleven_multilingual_v2",
-    defaultVoice: "Rachel",
+    defaultBaseUrl: "https://api.elevenlabs.io/v1",
+    defaultModel: "eleven_flash_v2_5",
+    defaultVoice: "CwhRBWXzGAHq8TQ4Fs17",
     models: [
       { id: "eleven_v3", label: "Eleven v3" },
+      { id: "eleven_flash_v2_5", label: "Eleven Flash v2.5" },
       { id: "eleven_multilingual_v2", label: "Eleven Multilingual v2" },
       { id: "eleven_turbo_v2_5", label: "Eleven Turbo v2.5" },
       { id: "eleven_monolingual_v1", label: "Eleven Monolingual v1" }
@@ -295,7 +298,7 @@ export const TTS_PROVIDER_OPTIONS: TtsProviderOption[] = [
   }
 ];
 
-export const STT_PROVIDER_OPTIONS: AsrProviderOption[] = [
+const RAW_STT_PROVIDER_OPTIONS: Array<Omit<AsrProviderOption, "tested">> = [
   {
     id: "distil-whisper",
     label: "Distil-Whisper (local)",
@@ -344,6 +347,27 @@ export const STT_PROVIDER_OPTIONS: AsrProviderOption[] = [
     needsCredential: true
   }
 ];
+
+const TESTED_TTS_PROVIDER_IDS = new Set<TtsProviderId>(["kokoro", "elevenlabs", "deepgram", "openai", "google", "openrouter"]);
+const TESTED_STT_PROVIDER_IDS = new Set<AsrProviderId>(["distil-whisper", "deepgram", "elevenlabs", "openai"]);
+
+export const TTS_PROVIDER_OPTIONS: TtsProviderOption[] = RAW_TTS_PROVIDER_OPTIONS.map((provider) => ({
+  ...provider,
+  tested: TESTED_TTS_PROVIDER_IDS.has(provider.id)
+}));
+
+export const STT_PROVIDER_OPTIONS: AsrProviderOption[] = RAW_STT_PROVIDER_OPTIONS.map((provider) => ({
+  ...provider,
+  tested: TESTED_STT_PROVIDER_IDS.has(provider.id)
+}));
+
+export function getVisibleTtsProviderOptions() {
+  return TTS_PROVIDER_OPTIONS.filter((provider) => provider.tested);
+}
+
+export function getVisibleSttProviderOptions() {
+  return STT_PROVIDER_OPTIONS.filter((provider) => provider.tested);
+}
 
 /** Provider IDs (TTS + STT) that require an API credential in the browser. */
 export const SPEECH_CREDENTIAL_PROVIDER_IDS: string[] = [

@@ -350,7 +350,7 @@ async function synthesizeElevenLabs(
   fetchImpl: FetchLike
 ) {
   const response = await fetchImpl(
-    `${trimSlash(config.baseUrl)}/text-to-speech/${encodeURIComponent(config.voiceId)}/stream`,
+    `${trimSlash(config.baseUrl)}/text-to-speech/${encodeURIComponent(config.voiceId)}?output_format=${encodeURIComponent(config.outputFormat)}`,
     {
       method: "POST",
       headers: {

@@ -74,9 +74,10 @@ export function createAsrRealtimeSession({
   }
 
   if (isCloudRealtimeAsrProvider(config.provider)) {
-    return createCloudRelayAsrRealtimeSession({
+    return createMediaRecorderAsrRealtimeSession({
       config,
       worker,
+      chunkMs,
       onPartial,
       onTranscript,
       onRecording,

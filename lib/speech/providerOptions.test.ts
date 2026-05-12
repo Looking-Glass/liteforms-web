@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS, SPEECH_CREDENTIAL_PROVIDER_IDS } from "./providerOptions";
+import {
+  getVisibleSttProviderOptions,
+  getVisibleTtsProviderOptions,
+  TTS_PROVIDER_OPTIONS,
+  STT_PROVIDER_OPTIONS,
+  SPEECH_CREDENTIAL_PROVIDER_IDS
+} from "./providerOptions";
 
 describe("TTS_PROVIDER_OPTIONS", () => {
   it("includes all 16 TTS providers", () => {
@@ -80,6 +86,18 @@ describe("TTS_PROVIDER_OPTIONS", () => {
       expect(opt?.needsCredential, `Expected ${id} to need credential`).toBe(true);
     }
   });
+
+  it("exposes only smoke-tested or manually tested TTS providers", () => {
+    expect(getVisibleTtsProviderOptions().map((p) => p.id)).toEqual([
+      "kokoro",
+      "elevenlabs",
+      "deepgram",
+      "openai",
+      "google",
+      "openrouter"
+    ]);
+    expect(TTS_PROVIDER_OPTIONS.find((p) => p.id === "elevenlabs")?.tested).toBe(true);
+  });
 });
 
 describe("STT_PROVIDER_OPTIONS", () => {
@@ -109,6 +127,15 @@ describe("STT_PROVIDER_OPTIONS", () => {
   it("distil-whisper does not need a credential", () => {
     const opt = STT_PROVIDER_OPTIONS.find((p) => p.id === "distil-whisper")!;
     expect(opt.needsCredential).toBe(false);
+  });
+
+  it("exposes only smoke-tested or manually tested STT providers", () => {
+    expect(getVisibleSttProviderOptions().map((p) => p.id)).toEqual([
+      "distil-whisper",
+      "deepgram",
+      "elevenlabs",
+      "openai"
+    ]);
   });
 });
 

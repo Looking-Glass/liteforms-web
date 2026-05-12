@@ -102,9 +102,12 @@ describe("LLM_PROVIDER_OPTIONS", () => {
     ]));
   });
 
-  it("keeps all providers visible when running outside Vercel", () => {
+  it("keeps only tested providers visible when running outside Vercel", () => {
     expect(getVisibleLlmProviderOptions({ isVercelDeployment: false }).map((provider) => provider.id)).toEqual(
-      LLM_PROVIDER_OPTIONS.map((provider) => provider.id)
+      LLM_PROVIDER_OPTIONS.filter((provider) => provider.tested).map((provider) => provider.id)
+    );
+    expect(getVisibleLlmProviderOptions({ isVercelDeployment: false }).map((provider) => provider.id)).not.toContain(
+      "mistral"
     );
   });
 });

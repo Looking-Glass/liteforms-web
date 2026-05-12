@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { createIndexedDbCredentialRepository } from "@/lib/storage/indexedDbCredentialRepository";
-import { CREDENTIAL_PROVIDER_IDS, LLM_PROVIDER_OPTIONS } from "@/lib/llm/providerOptions";
-import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
+import { CREDENTIAL_PROVIDER_IDS, getVisibleLlmProviderOptions } from "@/lib/llm/providerOptions";
+import { getVisibleTtsProviderOptions, getVisibleSttProviderOptions } from "@/lib/speech/providerOptions";
 import type { BrowserCredential } from "@/lib/storage/types";
 
 /** LLM + speech providers that require an API credential, de-duplicated and sorted. */
@@ -11,19 +11,19 @@ const CREDENTIAL_PROVIDER_OPTIONS = (() => {
   const seen = new Set<string>();
   const combined: { id: string; label: string }[] = [];
 
-  for (const p of LLM_PROVIDER_OPTIONS) {
+  for (const p of getVisibleLlmProviderOptions({ isVercelDeployment: false })) {
     if (CREDENTIAL_PROVIDER_IDS.includes(p.id) && !seen.has(p.id)) {
       seen.add(p.id);
       combined.push({ id: p.id, label: p.label });
     }
   }
-  for (const p of TTS_PROVIDER_OPTIONS) {
+  for (const p of getVisibleTtsProviderOptions()) {
     if (p.needsCredential && !seen.has(p.id)) {
       seen.add(p.id);
       combined.push({ id: p.id, label: p.label });
     }
   }
-  for (const p of STT_PROVIDER_OPTIONS) {
+  for (const p of getVisibleSttProviderOptions()) {
     if (p.needsCredential && !seen.has(p.id)) {
       seen.add(p.id);
       combined.push({ id: p.id, label: p.label });

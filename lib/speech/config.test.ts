@@ -27,7 +27,8 @@ describe("speech provider config", () => {
     expect(normalizeTtsConfig({ provider: "elevenlabs", credential: "el", voiceId: "voice" })).toMatchObject({
       provider: "elevenlabs",
       baseUrl: "https://api.elevenlabs.io/v1",
-      modelId: "eleven_multilingual_v2"
+      modelId: "eleven_flash_v2_5",
+      outputFormat: "mp3_22050_32"
     });
     expect(normalizeTtsConfig({ provider: "deepgram", credential: "dg", voice: "aura-asteria-en" })).toMatchObject({
       provider: "deepgram",

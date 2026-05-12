@@ -1,5 +1,5 @@
 import { fileURLToPath } from "url";
-import { configDefaults, defineConfig } from "vitest/config";
+import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   esbuild: {
@@ -7,8 +7,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["**/*.test.ts", "**/*.test.tsx"],
-    exclude: [...configDefaults.exclude, "**/*.smoke.test.ts"]
+    include: ["**/*.smoke.test.ts"],
+    testTimeout: 60000
   },
   resolve: {
     alias: {

@@ -51,12 +51,15 @@ npm run dev       # Start the Next.js development server
 npm run build     # Create a production build
 npm run lint      # Run ESLint
 npm run test      # Run the Vitest suite
+npm run test:smoke:providers # Ping cloud providers with API keys from .env
 npm run test:watch
 ```
 
 ## Configuration
 
 Most provider configuration happens inside the app UI. Users can choose the built-in local path or configure their own LLM, TTS, and STT providers.
+
+Provider smoke tests read `.env`, `.env.local`, `.env.test`, and `.env.test.local` from the project root. They skip any provider without a matching API key. Shared key names such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY`, `MISTRAL_API_KEY`, and provider-specific names are supported. Use `LITEFORMS_LLM_<PROVIDER>_API_KEY`, `LITEFORMS_TTS_<PROVIDER>_API_KEY`, or `LITEFORMS_STT_<PROVIDER>_API_KEY` when one account needs different keys per capability.
 
 ## Credentials And Privacy
 

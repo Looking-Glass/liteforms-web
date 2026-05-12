@@ -5,7 +5,7 @@ import { getDefaultProviderConfig } from "@/lib/llm";
 import type { BaseProviderConfig, LlmProviderId } from "@/lib/llm";
 import { CREDENTIAL_PROVIDER_IDS, getVisibleLlmProviderOptions, isVercelDeploymentFromEnv } from "@/lib/llm/providerOptions";
 import type { AsrConfig, AsrProviderId, RealtimeVoiceConfig, TtsConfig, TtsProviderId } from "@/lib/speech";
-import { TTS_PROVIDER_OPTIONS, STT_PROVIDER_OPTIONS } from "@/lib/speech/providerOptions";
+import { getVisibleTtsProviderOptions, getVisibleSttProviderOptions } from "@/lib/speech/providerOptions";
 import { updateEndpointMode } from "@/components/chat/chatPanelUtils";
 import { OpenClawSetupHint } from "@/components/openclaw/OpenClawSetupHint";
 import {
@@ -65,6 +65,8 @@ export function OnboardingModal({
   isVercelDeployment = isVercelDeploymentFromEnv()
 }: OnboardingModalProps) {
   const llmProviderOptions = getVisibleLlmProviderOptions({ isVercelDeployment });
+  const ttsProviderOptions = getVisibleTtsProviderOptions();
+  const sttProviderOptions = getVisibleSttProviderOptions();
   const defaultInitialConfig: BaseProviderConfig = {
     provider: "anthropic",
     model: "claude-opus-4-7",
@@ -131,12 +133,12 @@ export function OnboardingModal({
   }
 
   function updateTtsProvider(providerId: TtsProviderId) {
-    const opt = TTS_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? TTS_PROVIDER_OPTIONS[0];
+    const opt = ttsProviderOptions.find((p) => p.id === providerId) ?? ttsProviderOptions[0];
     if (providerId === "kokoro") {
       setTtsConfig({ provider: "kokoro" });
       setRealtimeVoiceConfig({ provider: "none" });
     } else if (providerId === "elevenlabs") {
-      setTtsConfig({ provider: "elevenlabs", voiceId: opt.defaultVoice ?? "Rachel", modelId: opt.defaultModel });
+      setTtsConfig({ provider: "elevenlabs", voiceId: opt.defaultVoice ?? "CwhRBWXzGAHq8TQ4Fs17", modelId: opt.defaultModel });
       setRealtimeVoiceConfig({ provider: "none" });
     } else {
       setTtsConfig({
@@ -150,7 +152,7 @@ export function OnboardingModal({
   }
 
   function updateAsrProvider(providerId: AsrProviderId) {
-    const opt = STT_PROVIDER_OPTIONS.find((p) => p.id === providerId) ?? STT_PROVIDER_OPTIONS[0];
+    const opt = sttProviderOptions.find((p) => p.id === providerId) ?? sttProviderOptions[0];
     if (providerId === "distil-whisper") {
       setAsrConfig({ provider: "distil-whisper" });
     } else if (providerId === "elevenlabs") {
@@ -211,8 +213,8 @@ export function OnboardingModal({
   const localAuthProvider: LocalAuthProviderId | null = isOpenAiCodex ? "openai-codex" : isClaudeCli ? "claude-cli" : null;
   const localAuthCopy = localAuthProvider ? getLocalAuthCopy(localAuthProvider) : null;
 
-  const ttsMeta = TTS_PROVIDER_OPTIONS.find((p) => p.id === ttsConfig.provider) ?? TTS_PROVIDER_OPTIONS[0];
-  const sttMeta = STT_PROVIDER_OPTIONS.find((p) => p.id === asrConfig.provider) ?? STT_PROVIDER_OPTIONS[0];
+  const ttsMeta = ttsProviderOptions.find((p) => p.id === ttsConfig.provider) ?? ttsProviderOptions[0];
+  const sttMeta = sttProviderOptions.find((p) => p.id === asrConfig.provider) ?? sttProviderOptions[0];
 
   function getTtsVoice() {
     if (ttsConfig.provider === "elevenlabs") return ttsConfig.voiceId ?? ttsMeta.defaultVoice ?? "";
@@ -526,7 +528,7 @@ export function OnboardingModal({
                 value={ttsConfig.provider}
                 onChange={(e) => updateTtsProvider(e.target.value as TtsProviderId)}
               >
-                {TTS_PROVIDER_OPTIONS.map((p) => (
+                {ttsProviderOptions.map((p) => (
                   <option key={p.id} value={p.id}>{p.label}</option>
                 ))}
               </select>
@@ -610,7 +612,7 @@ export function OnboardingModal({
               value={asrConfig.provider}
               onChange={(e) => updateAsrProvider(e.target.value as AsrProviderId)}
             >
-              {STT_PROVIDER_OPTIONS.map((p) => (
+              {sttProviderOptions.map((p) => (
                 <option key={p.id} value={p.id}>{p.label}</option>
               ))}
             </select>

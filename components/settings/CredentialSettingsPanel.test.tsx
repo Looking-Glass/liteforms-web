@@ -37,49 +37,16 @@ describe("CredentialSettingsPanel provider dropdown", () => {
     expect(screen.getByRole("option", { name: /google ai studio/i })).toBeInTheDocument();
   });
 
-  it("includes xAI in the provider dropdown", () => {
-    render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /xai/i })).toBeInTheDocument();
-  });
-
-  it("includes Mistral AI in the provider dropdown", () => {
-    render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /mistral/i })).toBeInTheDocument();
-  });
-
-  it("includes Cerebras in the provider dropdown", () => {
-    render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /cerebras/i })).toBeInTheDocument();
-  });
-
-  it("includes NVIDIA in the provider dropdown", () => {
-    render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /nvidia/i })).toBeInTheDocument();
-  });
-
-  it("includes Groq in the provider dropdown", () => {
-    render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /groq/i })).toBeInTheDocument();
-  });
-
-  it("includes Together AI in the provider dropdown", () => {
-    render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /together/i })).toBeInTheDocument();
-  });
-
-  it("includes Fireworks in the provider dropdown", () => {
-    render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /fireworks/i })).toBeInTheDocument();
-  });
-
-  it("includes Qwen Cloud in the provider dropdown", () => {
-    render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /qwen/i })).toBeInTheDocument();
-  });
-
   it("includes OpenRouter in the provider dropdown", () => {
     render(<CredentialSettingsPanel />);
     expect(screen.getByRole("option", { name: /openrouter/i })).toBeInTheDocument();
+  });
+
+  it("does not include untested cloud LLM providers in the provider dropdown", () => {
+    render(<CredentialSettingsPanel />);
+    for (const name of [/xai/i, /mistral/i, /cerebras/i, /nvidia/i, /groq/i, /together/i, /fireworks/i, /qwen/i]) {
+      expect(screen.queryByRole("option", { name })).not.toBeInTheDocument();
+    }
   });
 
   // ── Speech providers (non-LLM) stay in the list ──────────────────────────

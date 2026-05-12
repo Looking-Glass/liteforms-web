@@ -17,6 +17,8 @@ export type LlmProviderOption = {
   models?: ProviderModelOption[];
   /** Known realtime voice list. Currently used by Google Live. */
   voices?: ProviderVoiceOption[];
+  /** True only for providers verified by smoke tests or explicit manual testing. */
+  tested: boolean;
 };
 
 const VERCEL_LOCAL_ENDPOINT_REASON = "Requires a localhost/private-network service that a Vercel deployment cannot reach.";
@@ -67,6 +69,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "anthropic",
     label: "Anthropic API",
+    tested: true,
     defaultModel: "claude-opus-4-7",
     defaultBaseUrl: "https://api.anthropic.com",
     models: [
@@ -82,6 +85,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "openai",
     label: "OpenAI API",
+    tested: true,
     defaultModel: "gpt-5.5",
     defaultBaseUrl: "https://api.openai.com/v1",
     models: [
@@ -96,6 +100,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "openai-codex",
     label: "OpenAI Codex",
+    tested: true,
     defaultModel: "gpt-5.5",
     defaultBaseUrl: "https://chatgpt.com/backend-api/codex",
     models: [
@@ -108,6 +113,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "claude-cli",
     label: "Claude CLI",
+    tested: false,
     defaultModel: "claude-opus-4-7",
     defaultBaseUrl: "http://127.0.0.1:1456",
     models: [
@@ -122,6 +128,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "google",
     label: "Google AI Studio",
+    tested: true,
     defaultModel: "gemini-3.1-pro-preview",
     defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     models: [
@@ -139,6 +146,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "google-live",
     label: "Google Live (includes TTS and STT)",
+    tested: true,
     defaultModel: "gemini-2.5-flash-native-audio-preview-12-2025",
     defaultBaseUrl: "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent",
     defaultVoice: "Kore",
@@ -148,6 +156,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "xai",
     label: "xAI (Grok)",
+    tested: false,
     defaultModel: "grok-4",
     defaultBaseUrl: "https://api.x.ai/v1",
     models: [
@@ -164,6 +173,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "mistral",
     label: "Mistral AI",
+    tested: false,
     defaultModel: "mistral-large-latest",
     defaultBaseUrl: "https://api.mistral.ai/v1",
     models: [
@@ -179,6 +189,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "cerebras",
     label: "Cerebras",
+    tested: false,
     defaultModel: "gpt-oss-120b",
     defaultBaseUrl: "https://api.cerebras.ai/v1",
     models: [
@@ -191,6 +202,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "nvidia",
     label: "NVIDIA",
+    tested: false,
     defaultModel: "nvidia/nemotron-3-super-120b-a12b",
     defaultBaseUrl: "https://integrate.api.nvidia.com/v1",
     models: [
@@ -203,6 +215,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "openrouter",
     label: "OpenRouter",
+    tested: true,
     defaultModel: "openai/gpt-5.5",
     defaultBaseUrl: "https://openrouter.ai/api/v1"
     // No static model list — OpenRouter is a gateway to thousands of models
@@ -210,6 +223,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "groq",
     label: "Groq",
+    tested: false,
     defaultModel: "llama-3.3-70b-versatile",
     defaultBaseUrl: "https://api.groq.com/openai/v1"
     // No static model list — Groq models are fetched dynamically from the API
@@ -217,6 +231,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "together",
     label: "Together AI",
+    tested: false,
     defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
     defaultBaseUrl: "https://api.together.xyz/v1"
     // No static model list — Together AI hosts hundreds of open models
@@ -224,6 +239,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "fireworks",
     label: "Fireworks",
+    tested: false,
     defaultModel: "accounts/fireworks/models/llama-v3p3-70b-instruct",
     defaultBaseUrl: "https://api.fireworks.ai/inference/v1"
     // No static model list — Fireworks hosts hundreds of open models
@@ -231,6 +247,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "qwen",
     label: "Qwen Cloud",
+    tested: false,
     defaultModel: "qwen-plus",
     defaultBaseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
     // No static model list — Qwen model availability varies by plan/region
@@ -238,6 +255,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "ollama",
     label: "Ollama",
+    tested: false,
     defaultModel: "llama3.2",
     defaultBaseUrl: "http://localhost:11434"
     // No static model list — models are installed locally
@@ -245,6 +263,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "lmstudio",
     label: "LM Studio",
+    tested: false,
     defaultModel: "local-model",
     defaultBaseUrl: "http://localhost:1234/v1"
     // No static model list — models are loaded locally in LM Studio
@@ -252,6 +271,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "openclaw",
     label: "OpenClaw Gateway",
+    tested: true,
     defaultModel: "openclaw/default",
     defaultBaseUrl: "http://127.0.0.1:18789/v1"
     // OpenClaw exposes agent targets through its OpenAI-compatible HTTP gateway
@@ -259,12 +279,14 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
   {
     id: "browser-local-qwen",
     label: "Qwen 3.5 0.8B (local)",
+    tested: true,
     defaultModel: "onnx-community/Qwen3.5-0.8B-ONNX",
     models: [{ id: "onnx-community/Qwen3.5-0.8B-ONNX", label: "Qwen 3.5 0.8B (browser)" }]
   },
   {
     id: "browser-local-gemma",
     label: "Gemma 4 E2B (local)",
+    tested: true,
     defaultModel: "onnx-community/gemma-4-E2B-it-ONNX",
     models: [{ id: "onnx-community/gemma-4-E2B-it-ONNX", label: "Gemma 4 E2B (browser)" }]
   }
@@ -309,8 +331,9 @@ export function getAuditedLlmProviderOptions(): LlmProviderOption[] {
 
 export function getVisibleLlmProviderOptions({ isVercelDeployment }: { isVercelDeployment: boolean }) {
   const options = getAuditedLlmProviderOptions();
-  if (!isVercelDeployment) return options;
-  return options.filter((provider) => provider.vercelSupport !== "local-only");
+  const testedOptions = options.filter((provider) => provider.tested);
+  if (!isVercelDeployment) return testedOptions;
+  return testedOptions.filter((provider) => provider.vercelSupport !== "local-only");
 }
 
 export function isVercelDeploymentFromEnv() {

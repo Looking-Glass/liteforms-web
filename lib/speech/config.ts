@@ -17,8 +17,8 @@ export function normalizeTtsConfig(config: TtsConfig): Required<TtsConfig> {
       provider: "elevenlabs",
       credential: config.credential ?? "",
       baseUrl: config.baseUrl ?? "https://api.elevenlabs.io/v1",
-      voiceId: config.voiceId ?? "Rachel",
-      modelId: config.modelId ?? "eleven_multilingual_v2",
+      voiceId: config.voiceId ?? "CwhRBWXzGAHq8TQ4Fs17",
+      modelId: config.modelId ?? "eleven_flash_v2_5",
       stability: config.stability ?? 0.5,
       similarityBoost: config.similarityBoost ?? 0.75,
       style: config.style ?? 0,
@@ -26,7 +26,8 @@ export function normalizeTtsConfig(config: TtsConfig): Required<TtsConfig> {
       speed: config.speed ?? 1,
       seed: config.seed,
       languageCode: config.languageCode,
-      applyTextNormalization: config.applyTextNormalization
+      applyTextNormalization: config.applyTextNormalization,
+      outputFormat: config.outputFormat ?? "mp3_22050_32"
     } as Required<TtsConfig>;
   }
 
