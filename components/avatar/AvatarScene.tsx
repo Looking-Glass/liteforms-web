@@ -56,6 +56,7 @@ import {
   openHldHologramWindow,
   shouldHideHologramButtonForScreen,
 } from "@/lib/avatar/hologramWindow";
+import { installEditableKeyboardEventShield } from "@/lib/avatar/keyboardEventShield";
 import { createModelDragRotationController } from "@/lib/avatar/modelDragRotation";
 import {
   AVATAR_CAMERA_ASPECT,
@@ -274,6 +275,8 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let exitHldFallback: (() => void) | undefined;
     let isHldFallbackActive = false;
     let isLkgSessionActive = false;
+
+    const editableKeyboardShieldCleanup = installEditableKeyboardEventShield(window);
 
     void import("@lookingglass/webxr").then(({ LookingGlassWebXRPolyfill, LookingGlassConfig }) => {
       if (disposed) return;
@@ -839,6 +842,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       }
       lkgControlsObserver?.disconnect();
       vrButtonTextObserver?.disconnect();
+      editableKeyboardShieldCleanup?.();
       lkgConfigChangeCleanup?.();
       xrSessionEndCleanup?.();
       exitHldFallback?.();

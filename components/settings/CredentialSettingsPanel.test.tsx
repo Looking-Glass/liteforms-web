@@ -24,7 +24,7 @@ describe("CredentialSettingsPanel provider dropdown", () => {
 
   it("includes OpenAI in the provider dropdown", () => {
     render(<CredentialSettingsPanel />);
-    expect(screen.getByRole("option", { name: /openai/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^openai api$/i })).toBeInTheDocument();
   });
 
   it("includes Anthropic in the provider dropdown", () => {
