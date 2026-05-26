@@ -1143,6 +1143,19 @@ export function ChatPanel({
                 )}
                 <span className="vrm-filename">{vrmFileName || "Default (lobster)"}</span>
               </div>
+              <div className="vrm-gallery-links" aria-label="VRM avatar galleries">
+                <a className="button-link btn-ghost" href="https://hub.vroid.com/en" target="_blank" rel="noreferrer">
+                  Explore VRoid Hub
+                </a>
+                <a
+                  className="button-link btn-ghost"
+                  href="https://www.opensourceavatars.com/en/gallery"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Explore OSA
+                </a>
+              </div>
             </div>
           </details>
         </div>

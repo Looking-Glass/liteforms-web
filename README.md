@@ -7,7 +7,7 @@ The default path is designed to work without a hosted account system: users can 
 ## Features
 
 - Realtime 3D avatar scene with VRM loading, animation, expression, mouth movement, and Looking Glass/WebXR support.
-- Character editor for name, pronouns, personality, and custom VRM upload.
+- Character editor for name, pronouns, personality, custom VRM upload, and quick links to VRoid Hub and Open Source Avatars.
 - Browser-local LLM options using ONNX/Transformers models.
 - Browser-local Kokoro TTS and Distil-Whisper STT.
 - External LLM providers including OpenAI-compatible APIs, Anthropic, Google AI Studio, Google Live, xAI, Mistral, Cerebras, NVIDIA, OpenRouter, Groq, Together, Fireworks, Qwen Cloud, Ollama, LM Studio, OpenClaw Gateway, OpenAI Codex, and Claude CLI.
@@ -19,6 +19,7 @@ The default path is designed to work without a hosted account system: users can 
 - Node.js 20 or newer is recommended.
 - npm.
 - A modern Chromium-based browser is recommended for local model and audio features.
+- Looking Glass Go/WebXR use requires Looking Glass Bridge. The app checks Bridge through the official `@lookingglass/bridge` SDK and shows a dismissible setup banner when Bridge is not reachable.
 
 Local browser models can be large. The first run may download model assets and can take a while depending on network speed and hardware.
 
@@ -87,7 +88,7 @@ workers/      Browser workers for local model execution
 
 ## Open-Source Notes
 
-While Liteforms is open source, packages used by the project may or may not be. For example, the Looking Glass WebXR library is proprietary.
+While Liteforms is open source, packages used by the project may or may not be. Looking Glass integration uses the official `@lookingglass/bridge` SDK for Bridge status checks and `@lookingglass/webxr` for WebXR display support.
 
 ## License
 

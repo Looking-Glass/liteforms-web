@@ -170,6 +170,19 @@ describe("ChatPanel VRM loader", () => {
     expect(screen.getByRole("button", { name: "Load VRM" })).toBeInTheDocument();
   });
 
+  it("links to VRM avatar galleries from the Character section", () => {
+    renderPanel();
+
+    expect(screen.getByRole("link", { name: "Explore VRoid Hub" })).toHaveAttribute(
+      "href",
+      "https://hub.vroid.com/en"
+    );
+    expect(screen.getByRole("link", { name: "Explore OSA" })).toHaveAttribute(
+      "href",
+      "https://www.opensourceavatars.com/en/gallery"
+    );
+  });
+
   it("shows default lobster model text before any VRM is loaded", () => {
     renderPanel();
     expect(screen.getByText("Default (lobster)")).toBeInTheDocument();

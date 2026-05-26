@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AvatarScene } from "@/components/avatar/AvatarScene";
 import { ChatPanel, initialLocalModelLoadState } from "@/components/chat/ChatPanel";
 import type { CharacterConfig, LocalModelLoadState } from "@/components/chat/ChatPanel";
+import { BridgeRequiredBanner } from "@/components/looking-glass/BridgeRequiredBanner";
 import { OnboardingModal } from "@/components/onboarding/OnboardingModal";
+import { checkLookingGlassBridgeConnection } from "@/lib/avatar/bridgeConnection";
 import type { BaseProviderConfig } from "@/lib/llm";
 import type { AsrConfig, RealtimeVoiceConfig, TtsConfig } from "@/lib/speech";
 import { saveSessionConfig, loadSessionConfig } from "@/lib/storage/sessionConfig";
@@ -13,6 +15,7 @@ import { createIndexedDbVrmRepository } from "@/lib/storage/indexedDbVrmReposito
 import type { VrmRepository } from "@/lib/storage/vrmRepository";
 
 const onboardingStorageKey = "liteforms.onboardingMode";
+const bridgeConnectionRetryMs = 5000;
 
 const defaultCharacter: CharacterConfig = {
   name: "Clawdia",
@@ -39,6 +42,9 @@ export default function HomePage() {
   const [initialRealtimeVoiceConfig, setInitialRealtimeVoiceConfig] = useState<RealtimeVoiceConfig | undefined>(undefined);
   const [chatPanelKey, setChatPanelKey] = useState(0);
   const [modalLoadState, setModalLoadState] = useState<LocalModelLoadState[]>(initialLocalModelLoadState);
+  const [bridgeConnected, setBridgeConnected] = useState<boolean | undefined>(undefined);
+  const [isBridgeBannerDismissed, setIsBridgeBannerDismissed] = useState(false);
+  const showBridgeBanner = bridgeConnected === false && !isBridgeBannerDismissed;
 
   useEffect(() => {
     const savedMode = localStorage.getItem(onboardingStorageKey);
@@ -72,6 +78,31 @@ export default function HomePage() {
     }).catch(() => {
       // IndexedDB may be unavailable (private browsing, storage quota, etc.)
     });
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let retryId: number | undefined;
+
+    const checkBridge = async () => {
+      const connected = await checkLookingGlassBridgeConnection();
+      if (disposed) return;
+      setBridgeConnected(connected);
+      if (connected && retryId !== undefined) {
+        window.clearInterval(retryId);
+        retryId = undefined;
+      }
+    };
+
+    void checkBridge();
+    retryId = window.setInterval(() => {
+      void checkBridge();
+    }, bridgeConnectionRetryMs);
+
+    return () => {
+      disposed = true;
+      if (retryId !== undefined) window.clearInterval(retryId);
+    };
   }, []);
 
   const handleLocalModelLoadStateChange = useCallback((state: LocalModelLoadState[]) => {
@@ -139,7 +170,8 @@ export default function HomePage() {
   }
 
   return (
-    <main className="stage">
+    <main className={showBridgeBanner ? "stage stage--with-top-banner" : "stage"}>
+      {showBridgeBanner && <BridgeRequiredBanner onDismiss={() => setIsBridgeBannerDismissed(true)} />}
       <section className="avatar-viewport" aria-label="Avatar preview">
         <AvatarScene modelUrl={modelUrl} />
       </section>
