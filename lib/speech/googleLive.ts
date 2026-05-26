@@ -27,7 +27,7 @@ export type GoogleLiveServerEvent =
   | { type: "closed" };
 
 export type GoogleLiveBrowserSession = {
-  start(stream: MediaStream): void;
+  start(stream?: MediaStream): void;
   stop(): void;
   isActive(): boolean;
   sendText(text: string): void;
@@ -175,6 +175,8 @@ export function createGoogleLiveBrowserSession({
   let source: MediaStreamAudioSourceNode | null = null;
   let processor: ScriptProcessorNode | null = null;
   let active = false;
+  let setupComplete = false;
+  let pendingMessages: unknown[] = [];
 
   const emitError = (caught: unknown) => {
     onError?.(caught instanceof Error ? caught : new Error("Google Live session failed."));
@@ -188,26 +190,43 @@ export function createGoogleLiveBrowserSession({
     source = null;
     context = null;
     active = false;
+    setupComplete = false;
+    pendingMessages = [];
   };
 
-  const sendJson = (message: unknown) => {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+  const sendJson = (message: unknown, { requiresSetup = true }: { requiresSetup?: boolean } = {}) => {
+    if (socket?.readyState === WebSocket.OPEN && (!requiresSetup || setupComplete)) {
+      socket.send(JSON.stringify(message));
+      return;
+    }
+    pendingMessages.push(message);
+  };
+
+  const flushPendingMessages = () => {
+    if (socket?.readyState !== WebSocket.OPEN || !setupComplete) return;
+    for (const message of pendingMessages) {
+      socket.send(JSON.stringify(message));
+    }
+    pendingMessages = [];
   };
 
   return {
     start(stream) {
       if (active) return;
       try {
-        const AudioContextCtor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
-        if (!AudioContextCtor) throw new Error("Web Audio capture is unavailable.");
         socket = new WebSocketCtor(buildGoogleLiveWebSocketUrl(normalized));
         socket.addEventListener("open", () => {
-          sendJson(buildGoogleLiveSetupMessage(normalized));
+          sendJson(buildGoogleLiveSetupMessage(normalized), { requiresSetup: false });
         });
         socket.addEventListener("message", (event) => {
           const handle = (text: string) => {
             try {
               const parsed = JSON.parse(text);
+              const record = readRecord(parsed);
+              if (record?.setupComplete || record?.setup_complete) {
+                setupComplete = true;
+                flushPendingMessages();
+              }
               for (const mapped of mapGoogleLiveEvent(parsed)) {
                 if (mapped.type === "user_transcript") onUserTranscript?.(mapped.text, mapped.final);
                 if (mapped.type === "assistant_transcript") onAssistantTranscript?.(mapped.text, mapped.final);
@@ -227,22 +246,26 @@ export function createGoogleLiveBrowserSession({
         socket.addEventListener("error", () => emitError(new Error("Google Live WebSocket failed.")));
         socket.addEventListener("close", cleanupAudio);
 
-        context = new AudioContextCtor();
-        source = context.createMediaStreamSource(stream);
-        processor = context.createScriptProcessor(4096, 1, 1);
-        processor.onaudioprocess = (event) => {
-          const samples = mixAndResampleInputBuffer(event.inputBuffer, 16000);
-          sendJson({
-            realtimeInput: {
-              audio: {
-                data: bytesToBase64(encodePcm16(samples)),
-                mimeType: "audio/pcm;rate=16000"
+        if (stream) {
+          const AudioContextCtor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+          if (!AudioContextCtor) throw new Error("Web Audio capture is unavailable.");
+          context = new AudioContextCtor();
+          source = context.createMediaStreamSource(stream);
+          processor = context.createScriptProcessor(4096, 1, 1);
+          processor.onaudioprocess = (event) => {
+            const samples = mixAndResampleInputBuffer(event.inputBuffer, 16000);
+            sendJson({
+              realtimeInput: {
+                audio: {
+                  data: bytesToBase64(encodePcm16(samples)),
+                  mimeType: "audio/pcm;rate=16000"
+                }
               }
-            }
-          });
-        };
-        source.connect(processor);
-        processor.connect(context.destination);
+            });
+          };
+          source.connect(processor);
+          processor.connect(context.destination);
+        }
         active = true;
       } catch (caught) {
         cleanupAudio();
@@ -250,7 +273,7 @@ export function createGoogleLiveBrowserSession({
       }
     },
     stop() {
-      sendJson({ clientContent: { turnComplete: true } });
+      sendJson({ clientContent: { turnComplete: true } }, { requiresSetup: false });
       socket?.close();
       cleanupAudio();
     },

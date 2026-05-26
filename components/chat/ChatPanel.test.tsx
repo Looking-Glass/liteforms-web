@@ -5,7 +5,12 @@ import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/re
 import { ChatPanel, _clearPreloadSessionsForTesting } from "./ChatPanel";
 import type { CharacterConfig } from "./ChatPanel";
 import { createLlmAdapter } from "@/lib/llm";
-import { createAsrAdapter, createAsrRealtimeSession, createTtsAdapter } from "@/lib/speech";
+import {
+  createAsrAdapter,
+  createAsrRealtimeSession,
+  createGoogleLiveBrowserSession,
+  createTtsAdapter
+} from "@/lib/speech";
 
 afterEach(cleanup);
 
@@ -50,6 +55,8 @@ vi.mock("@/lib/speech", async (importOriginal) => {
       transcribe: vi.fn().mockResolvedValue({ text: "" })
     }),
     createAsrRealtimeSession: vi.fn(),
+    createGoogleLiveBrowserSession: vi.fn(),
+    createOpenAiRealtimeBrowserSession: vi.fn(),
     playTtsResult: vi.fn().mockResolvedValue(undefined)
   };
 });
@@ -342,6 +349,91 @@ describe("ChatPanel chat interface", () => {
     renderPanel();
     expect(screen.getByPlaceholderText("Type a message…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send" })).toBeInTheDocument();
+  });
+
+  it("keeps the text composer visible for OpenAI Realtime and Google Live providers", () => {
+    renderPanelWithConfig({
+      initialRealtimeVoiceConfig: {
+        provider: "openai-realtime",
+        credential: "sk-test",
+        model: "gpt-realtime-2",
+        voice: "coral"
+      }
+    });
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
+
+    cleanup();
+
+    renderPanelWithConfig({
+      initialRealtimeVoiceConfig: {
+        provider: "google-live",
+        credential: "google-key",
+        model: "gemini-live",
+        voice: "Kore"
+      }
+    });
+    expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
+  });
+
+  it("starts realtime voice and sends typed text through that session", async () => {
+    const stream = {
+      getAudioTracks: vi.fn().mockReturnValue([{ readyState: "live", stop: vi.fn() }]),
+      getTracks: vi.fn().mockReturnValue([{ readyState: "live", stop: vi.fn() }])
+    };
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn().mockResolvedValue(stream)
+      }
+    });
+    vi.stubGlobal("requestAnimationFrame", vi.fn());
+    vi.stubGlobal("AudioContext", class {
+      state = "running";
+      currentTime = 0;
+      destination = {};
+      createAnalyser() {
+        return {
+          fftSize: 0,
+          frequencyBinCount: 8,
+          connect: vi.fn(),
+          getByteTimeDomainData: vi.fn()
+        };
+      }
+      createBufferSource() {
+        return { connect: vi.fn(), start: vi.fn(), buffer: null };
+      }
+      decodeAudioData = vi.fn().mockResolvedValue({ duration: 0.1 });
+      close = vi.fn();
+    });
+
+    const sendText = vi.fn();
+    const session = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      isActive: vi.fn().mockReturnValue(true),
+      sendText
+    };
+    vi.mocked(createGoogleLiveBrowserSession).mockReturnValueOnce(session);
+    vi.mocked(createLlmAdapter).mockClear();
+
+    renderPanelWithConfig({
+      initialRealtimeVoiceConfig: {
+        provider: "google-live",
+        credential: "google-key",
+        model: "gemini-live",
+        voice: "Kore"
+      }
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Hello realtime" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => {
+      expect(session.start).toHaveBeenCalledWith(undefined);
+      expect(sendText).toHaveBeenCalledWith("Hello realtime");
+    });
+
+    expect(vi.mocked(createLlmAdapter)).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
 

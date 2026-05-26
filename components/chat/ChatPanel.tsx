@@ -536,15 +536,21 @@ export function ChatPanel({
     setError("");
     setStatus("streaming");
 
+    const activeRealtimeProvider = isActiveRealtimeVoiceConfig(realtimeVoiceConfig)
+      ? realtimeVoiceConfig.provider
+      : isRealtimeVoiceProvider(config.provider)
+        ? config.provider
+        : undefined;
     const nextMessages = [...messages, { role: "user" as const, content }];
-    if (isRealtimeVoiceProvider(config.provider)) {
+    if (activeRealtimeProvider) {
       setMessages(nextMessages);
       const session = googleLiveSessionRef.current;
-      if (session?.isActive()) {
-        session.sendText(content);
+      const activeSession = session?.isActive() ? session : await startRealtimeVoiceSession({ captureMicrophone: false });
+      if (activeSession?.isActive()) {
+        activeSession.sendText(content);
         setStatus("idle");
       } else {
-        setError(`Start ${realtimeProviderLabel(config.provider)} before sending a message with the ${realtimeProviderLabel(config.provider)} provider.`);
+        setError(`Start ${realtimeProviderLabel(activeRealtimeProvider)} before sending a message with the ${realtimeProviderLabel(activeRealtimeProvider)} provider.`);
         setStatus("error");
       }
       return;
@@ -727,16 +733,22 @@ export function ChatPanel({
       setLastAsrDebug(`${providerLabel}: stopped`);
       return;
     }
+    await startRealtimeVoiceSession({ captureMicrophone: true });
+  }
+
+  async function startRealtimeVoiceSession({ captureMicrophone }: { captureMicrophone: boolean }) {
+    if (!isActiveRealtimeVoiceConfig(realtimeVoiceConfig)) return null;
+    const providerLabel = realtimeProviderLabel(realtimeVoiceConfig.provider);
     if (!realtimeVoiceConfig.credential) {
       setSpeechError(`${providerLabel} credential is required.`);
       setSpeechStatus("error");
-      return;
+      return null;
     }
     setSpeechError("");
     setTranscript("");
     setLastAsrDebug(`${providerLabel}: connecting...`);
     try {
-      const stream = await getMicrophoneStream();
+      const stream = captureMicrophone ? await getMicrophoneStream() : undefined;
 
       // Web Audio context — gapless scheduling + RMS lip sync.
       const playbackCtx = new AudioContext();
@@ -828,11 +840,13 @@ export function ChatPanel({
       });
       googleLiveSessionRef.current = session;
       session.start(stream);
-      setSpeechStatus("listening");
-      setLastAsrDebug(`${providerLabel}: listening`);
+      setSpeechStatus(captureMicrophone ? "listening" : "idle");
+      setLastAsrDebug(`${providerLabel}: ${captureMicrophone ? "listening" : "connected"}`);
+      return session;
     } catch (caught) {
       setSpeechError(caught instanceof Error ? caught.message : `${providerLabel} failed to start.`);
       setSpeechStatus("error");
+      return null;
     }
   }
 

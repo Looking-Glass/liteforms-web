@@ -17,7 +17,7 @@ export type OpenAiRealtimeServerEvent =
   | { type: "closed" };
 
 export type OpenAiRealtimeBrowserSession = {
-  start(stream: MediaStream): void;
+  start(stream?: MediaStream): void;
   stop(): void;
   isActive(): boolean;
   sendText(text: string): void;
@@ -147,6 +147,7 @@ export function createOpenAiRealtimeBrowserSession({
   let processor: ScriptProcessorNode | null = null;
   let active = false;
   let assistantTranscript = "";
+  let pendingMessages: unknown[] = [];
 
   const emitError = (caught: unknown) => {
     onError?.(caught instanceof Error ? caught : new Error("OpenAI Realtime session failed."));
@@ -161,10 +162,23 @@ export function createOpenAiRealtimeBrowserSession({
     context = null;
     active = false;
     assistantTranscript = "";
+    pendingMessages = [];
   };
 
   const sendJson = (message: unknown) => {
-    if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+    if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify(message));
+      return;
+    }
+    pendingMessages.push(message);
+  };
+
+  const flushPendingMessages = () => {
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    for (const message of pendingMessages) {
+      socket.send(JSON.stringify(message));
+    }
+    pendingMessages = [];
   };
 
   const handleMappedEvent = (mapped: OpenAiRealtimeServerEvent) => {
@@ -182,14 +196,13 @@ export function createOpenAiRealtimeBrowserSession({
     start(stream) {
       if (active) return;
       try {
-        const AudioContextCtor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
-        if (!AudioContextCtor) throw new Error("Web Audio capture is unavailable.");
         socket = new WebSocketCtor(
           buildOpenAiRealtimeWebSocketUrl(normalized),
           buildOpenAiRealtimeWebSocketProtocols(normalized)
         );
         socket.addEventListener("open", () => {
           sendJson(buildOpenAiRealtimeSessionUpdateMessage(normalized));
+          flushPendingMessages();
         });
         socket.addEventListener("message", (event) => {
           const handle = (text: string) => {
@@ -209,15 +222,19 @@ export function createOpenAiRealtimeBrowserSession({
         socket.addEventListener("error", () => emitError(new Error("OpenAI Realtime WebSocket failed.")));
         socket.addEventListener("close", cleanupAudio);
 
-        context = new AudioContextCtor();
-        source = context.createMediaStreamSource(stream);
-        processor = context.createScriptProcessor(4096, 1, 1);
-        processor.onaudioprocess = (event) => {
-          const samples = mixAndResampleInputBuffer(event.inputBuffer, 24000);
-          sendJson({ type: "input_audio_buffer.append", audio: bytesToBase64(encodePcm16(samples)) });
-        };
-        source.connect(processor);
-        processor.connect(context.destination);
+        if (stream) {
+          const AudioContextCtor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+          if (!AudioContextCtor) throw new Error("Web Audio capture is unavailable.");
+          context = new AudioContextCtor();
+          source = context.createMediaStreamSource(stream);
+          processor = context.createScriptProcessor(4096, 1, 1);
+          processor.onaudioprocess = (event) => {
+            const samples = mixAndResampleInputBuffer(event.inputBuffer, 24000);
+            sendJson({ type: "input_audio_buffer.append", audio: bytesToBase64(encodePcm16(samples)) });
+          };
+          source.connect(processor);
+          processor.connect(context.destination);
+        }
         active = true;
       } catch (caught) {
         cleanupAudio();
