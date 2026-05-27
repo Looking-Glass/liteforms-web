@@ -204,7 +204,7 @@ export function OnboardingModal({
       (!usesRealtimeVoice && ttsConfig.provider === "kokoro") ||
       (!usesRealtimeVoice && asrConfig.provider === "distil-whisper");
 
-    if (mode === "configure" && !needsLocalModels) {
+    if (!needsLocalModels) {
       // All-cloud config: nothing to download, save and close immediately.
       submitCustomConfig();
       onClose();

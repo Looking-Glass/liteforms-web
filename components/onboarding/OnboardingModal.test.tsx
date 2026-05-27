@@ -563,6 +563,33 @@ describe("OnboardingModal STT step", () => {
       expect.objectContaining({ provider: "deepgram" })
     );
   });
+
+  it("closes immediately instead of showing downloads when all selected providers are cloud-backed", () => {
+    const onUseCustom = vi.fn();
+    const onClose = vi.fn();
+    renderModal({ onUseCustom, onClose, localModelLoadState: [] });
+    goToLlmStep();
+    fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
+      target: { value: "openai" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+    fireEvent.change(screen.getByRole("combobox", { name: /voice/i }), {
+      target: { value: "elevenlabs" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^next$/i }));
+    fireEvent.change(screen.getByRole("combobox", { name: /speech input/i }), {
+      target: { value: "deepgram" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: /start liteforms/i }));
+
+    expect(onUseCustom).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "openai" }),
+      expect.objectContaining({ provider: "elevenlabs" }),
+      expect.objectContaining({ provider: "deepgram" })
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog", { name: /loading models/i })).not.toBeInTheDocument();
+  });
 });
 
 // ── LLM model dropdown ────────────────────────────────────────────────────────
