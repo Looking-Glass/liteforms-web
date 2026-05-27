@@ -45,6 +45,7 @@ import {
 import type { ModelFootprint } from "@/lib/avatar/modelFraming";
 import { repairMorphTargetDictionaries } from "@/lib/avatar/vrmMorphTargetRepair";
 import type { GltfMeshDef } from "@/lib/avatar/vrmMorphTargetRepair";
+import { prepareVrmSpringBones } from "@/lib/avatar/vrmSpringBoneFallback";
 import {
   HldShadowCompositor,
   extractSilhouetteFromWebGL,
@@ -481,6 +482,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           runtimeAnimator?.dispose();
           const environmentReference = await frameModel(loadedVrm.scene);
           if (disposed) return;
+          prepareVrmSpringBones(loadedVrm);
           runtimeAnimator = new VrmRuntimeAnimator(loadedVrm);
 
           // Update the holographic focal plane so the lobster is centred on
