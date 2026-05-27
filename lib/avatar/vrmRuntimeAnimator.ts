@@ -15,6 +15,7 @@ import { createBrowserFootPlantDebugOptions, VrmFootPlantLock } from "./vrmFootP
 const vrmMouthExpressions: VrmMouthExpression[] = ["aa", "ih", "ou", "ee", "oh"];
 const blinkExpressionNames = ["blink", "blinkLeft", "blinkRight"];
 const blinkMorphTargetCandidates = ["Blink", "blink", "BLINK", "Fcl_EYE_Close"];
+const footPlantSettleFrames = 2;
 
 type AnimatorClock = {
   now(): number;
@@ -63,7 +64,10 @@ export class VrmRuntimeAnimator {
     this.morphMouthTargets = getAvailableVrm0MouthMorphTargets(vrm.scene);
     this.blinkExpressionNames = blinkExpressionNames.filter((name) => hasBoundVrmExpression(vrm.expressionManager, name));
     this.blinkMorphTargetName = this.resolveBlinkMorphTarget();
-    this.footPlantLock = new VrmFootPlantLock(vrm, createBrowserFootPlantDebugOptions());
+    this.footPlantLock = new VrmFootPlantLock(vrm, {
+      ...createBrowserFootPlantDebugOptions(),
+      settleFrames: footPlantSettleFrames
+    });
     this.resolvedMouthExpressionNames = new Map();
     for (const expression of vrmMouthExpressions) {
       const resolved = resolveVrmMouthExpressionName(vrm.expressionManager, expression);
@@ -119,6 +123,10 @@ export class VrmRuntimeAnimator {
 
   applyPostVrmUpdate() {
     this.footPlantLock.applyPostVrmUpdate();
+  }
+
+  resetFootPlant(settleFrames?: number) {
+    this.footPlantLock.reset(settleFrames);
   }
 
   dispose() {

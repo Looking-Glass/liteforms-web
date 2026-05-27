@@ -520,6 +520,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
             idleAnimatorRef.current?.dispose();
             idleAnimator = new VrmIdleAnimator(loadedVrm, clip);
             idleAnimatorRef.current = idleAnimator;
+            runtimeAnimator?.resetFootPlant();
           });
         },
         undefined,
