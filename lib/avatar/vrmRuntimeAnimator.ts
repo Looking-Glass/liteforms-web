@@ -10,6 +10,7 @@ import {
   setMorphTargetWeight
 } from "./morphTargetController";
 import { hasBoundVrmExpression, resolveVrmMouthExpressionName } from "./vrmExpressionController";
+import { createBrowserFootPlantDebugOptions, VrmFootPlantLock } from "./vrmFootPlantLock";
 
 const vrmMouthExpressions: VrmMouthExpression[] = ["aa", "ih", "ou", "ee", "oh"];
 const blinkExpressionNames = ["blink", "blinkLeft", "blinkRight"];
@@ -41,6 +42,7 @@ export class VrmRuntimeAnimator {
   private readonly morphMouthTargets: string[];
   private readonly blinkExpressionNames: string[];
   private readonly blinkMorphTargetName: string | null;
+  private readonly footPlantLock: VrmFootPlantLock;
   /** Maps each VRM mouth expression (aa/ih/ou/ee/oh) to the actual name in the expression manager. */
   private readonly resolvedMouthExpressionNames: Map<VrmMouthExpression, string>;
   private mouthTarget: MouthTarget | null = null;
@@ -61,6 +63,7 @@ export class VrmRuntimeAnimator {
     this.morphMouthTargets = getAvailableVrm0MouthMorphTargets(vrm.scene);
     this.blinkExpressionNames = blinkExpressionNames.filter((name) => hasBoundVrmExpression(vrm.expressionManager, name));
     this.blinkMorphTargetName = this.resolveBlinkMorphTarget();
+    this.footPlantLock = new VrmFootPlantLock(vrm, createBrowserFootPlantDebugOptions());
     this.resolvedMouthExpressionNames = new Map();
     for (const expression of vrmMouthExpressions) {
       const resolved = resolveVrmMouthExpressionName(vrm.expressionManager, expression);
@@ -110,7 +113,12 @@ export class VrmRuntimeAnimator {
     this.updateMouth(delta, now);
     this.updateBlink(delta, now);
     this.updateEyeTarget(now);
+    this.footPlantLock.update();
     this.vrm.expressionManager?.update?.();
+  }
+
+  applyPostVrmUpdate() {
+    this.footPlantLock.applyPostVrmUpdate();
   }
 
   dispose() {

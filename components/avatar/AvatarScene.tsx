@@ -479,9 +479,9 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           scene.add(loadedVrm.scene);
           setMeshShadowFlags(loadedVrm.scene, true, false);
           runtimeAnimator?.dispose();
-          runtimeAnimator = new VrmRuntimeAnimator(loadedVrm);
           const environmentReference = await frameModel(loadedVrm.scene);
           if (disposed) return;
+          runtimeAnimator = new VrmRuntimeAnimator(loadedVrm);
 
           // Update the holographic focal plane so the lobster is centred on
           // the convergence point. LookingGlassConfig is the exported singleton;
@@ -815,6 +815,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         idleAnimatorRef.current?.update(delta);
         runtimeAnimator?.update(delta);
         currentVrm?.update(delta);
+        runtimeAnimator?.applyPostVrmUpdate();
         renderer!.render(scene, camera);
         if (isHldFallbackActive) {
           drawHldShadow();
