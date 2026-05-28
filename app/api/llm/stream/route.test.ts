@@ -92,6 +92,52 @@ describe("POST /api/llm/stream", () => {
     expect(await response.text()).toBe("Hi there");
   });
 
+  it("forwards Liteforms proxy requests to Blocks without a user API key", async () => {
+    const fetchSpy = vi.fn(async () => makeOpenAiSSEStream("Hosted Liteforms"));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const req = new NextRequest("http://localhost/api/llm/stream", {
+      method: "POST",
+      body: JSON.stringify({
+        config: { provider: "liteforms-proxy", model: "gpt-4o" },
+        messages: [{ role: "user", content: "Hi" }]
+      })
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("Hosted Liteforms");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://blocks.glass/api/liteforms/chat_proxy_stream",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) }),
+        body: expect.stringContaining('"messages"')
+      })
+    );
+  });
+
+  it("normalizes stale Liteforms proxy models before forwarding to Blocks", async () => {
+    const fetchSpy = vi.fn(async () => makeOpenAiSSEStream("Hosted Liteforms"));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const req = new NextRequest("http://localhost/api/llm/stream", {
+      method: "POST",
+      body: JSON.stringify({
+        config: { provider: "liteforms-proxy", model: "liteforms/default" },
+        messages: [{ role: "user", content: "Hi" }]
+      })
+    });
+
+    const response = await POST(req);
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("Hosted Liteforms");
+    const forwardedBody = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(forwardedBody).toMatchObject({ model: "gpt-4o" });
+  });
+
   it("calls the external Anthropic endpoint directly (server-side, no proxy loop)", async () => {
     const fetchSpy = vi.fn(async () => makeAnthropicSSEStream("Direct"));
     vi.stubGlobal("fetch", fetchSpy);

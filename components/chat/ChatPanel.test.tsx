@@ -112,7 +112,8 @@ describe("ChatPanel collapsible sections", () => {
     // Character section is open by default
     expect(screen.getByPlaceholderText("Character name")).toBeInTheDocument();
     // Settings readouts are accessible in the DOM even when section is collapsed
-    expect(screen.getByRole("group", { name: "Model provider" })).toHaveTextContent("Browser local (Gemma)");
+    expect(screen.getByRole("group", { name: "Model provider" })).toHaveTextContent("Liteforms hosted proxy");
+    expect(screen.getByRole("group", { name: "Model" })).toHaveTextContent("Liteforms server default");
     expect(screen.getByRole("group", { name: "Voice provider" })).toHaveTextContent("Kokoro local");
   });
 
@@ -1128,16 +1129,16 @@ describe("ChatPanel local model preloading", () => {
 
   it("does not start preloading on mount without shouldPreloadLocalModels", async () => {
     renderPanel();
-    // Wait through multiple microtask ticks; models should never transition away from Waiting
+    // Wait through multiple microtask ticks; active local models should never transition away from Waiting.
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    expect(screen.getAllByText("Waiting")).toHaveLength(3);
+    expect(screen.getAllByText("Waiting")).toHaveLength(2);
   });
 
   it("keeps model status as Waiting when shouldPreloadLocalModels is not set", async () => {
     renderPanel();
     await Promise.resolve();
     const waitingStatuses = screen.getAllByText("Waiting");
-    expect(waitingStatuses).toHaveLength(3);
+    expect(waitingStatuses).toHaveLength(2);
   });
 
   it("starts preloading and shows Ready when shouldPreloadLocalModels is true", async () => {
@@ -1150,7 +1151,7 @@ describe("ChatPanel local model preloading", () => {
       />
     );
     await waitFor(() => {
-      expect(screen.getAllByText("Ready")).toHaveLength(3);
+      expect(screen.getAllByText("Ready")).toHaveLength(2);
     });
   });
 
@@ -1193,9 +1194,11 @@ describe("ChatPanel local model preloading", () => {
       expect(vi.mocked(DistilWhisperWorkerClient).mock.results.at(0)?.value.preload).toHaveBeenCalledTimes(1);
     });
 
-    expect(screen.getByText("Cached")).toBeInTheDocument();
+    expect(screen.getByText("1.0 KB / 1 files")).toBeInTheDocument();
     expect(screen.getAllByText("Ready")).toHaveLength(2);
-    expect(vi.mocked(LocalGemmaWorkerClient).mock.results.at(0)?.value.preload).not.toHaveBeenCalled();
+    for (const result of vi.mocked(LocalGemmaWorkerClient).mock.results) {
+      expect(result.value.preload).not.toHaveBeenCalled();
+    }
   });
 
   it("throttles rapid progress events and still reaches Ready after flush", async () => {
@@ -1216,6 +1219,11 @@ describe("ChatPanel local model preloading", () => {
         character={defaultCharacter}
         onCharacterChange={vi.fn()}
         onModelUrlChange={vi.fn()}
+        initialLlmConfig={{
+          provider: "browser-local-gemma",
+          model: "onnx-community/gemma-4-E2B-it-ONNX",
+          endpointMode: "native"
+        }}
         shouldPreloadLocalModels={true}
       />
     );
@@ -1263,16 +1271,17 @@ describe("ChatPanel Qwen 3.5 local provider", () => {
 // Active-only local model display
 
 describe("ChatPanel advanced panel shows only selected local models", () => {
-  it("shows only 3 models (gemma+kokoro+distil-whisper) by default (browser-local-gemma provider)", async () => {
+  it("shows only 2 local speech models by default when LLM uses Liteforms hosted proxy", async () => {
     renderPanel();
     await new Promise<void>((r) => setTimeout(r, 0));
-    // Default: browser-local-gemma + kokoro + distil-whisper — qwen-local should NOT appear
-    expect(screen.getAllByText("Waiting")).toHaveLength(3);
+    // Default: Liteforms hosted proxy + kokoro + distil-whisper, so no local LLM row appears.
+    expect(screen.getAllByText("Waiting")).toHaveLength(2);
   });
 
-  it("does not show qwen-local row when provider is browser-local-gemma", async () => {
+  it("does not show browser-local LLM rows when the default provider is Liteforms hosted proxy", async () => {
     renderPanel();
     await new Promise<void>((r) => setTimeout(r, 0));
+    expect(screen.queryByText("Gemma 4 E2B q8")).not.toBeInTheDocument();
     expect(screen.queryByText("Qwen 3.5 0.8B")).not.toBeInTheDocument();
   });
 

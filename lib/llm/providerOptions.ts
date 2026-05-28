@@ -1,4 +1,5 @@
 import type { LlmProviderId } from "./types";
+import { LITEFORMS_PROXY_DEFAULT_BASE_URL, LITEFORMS_PROXY_DEFAULT_MODEL } from "./liteformsProxy";
 
 export type ProviderModelOption = { id: string; label: string };
 export type ProviderVoiceOption = { id: string; label: string };
@@ -83,6 +84,14 @@ export const OPENAI_REALTIME_VOICE_OPTIONS: ProviderVoiceOption[] = [
 ];
 
 export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
+  {
+    id: "liteforms-proxy",
+    label: "Liteforms hosted proxy",
+    tested: true,
+    defaultModel: LITEFORMS_PROXY_DEFAULT_MODEL,
+    defaultBaseUrl: LITEFORMS_PROXY_DEFAULT_BASE_URL,
+    models: [{ id: LITEFORMS_PROXY_DEFAULT_MODEL, label: "Liteforms server default" }]
+  },
   {
     id: "anthropic",
     label: "Anthropic API",
@@ -320,6 +329,7 @@ export const LLM_PROVIDER_OPTIONS: LlmProviderOption[] = [
 ];
 
 export const LLM_PROVIDER_VERCEL_AUDIT = {
+  "liteforms-proxy": { support: "supported", reason: "Uses the hosted Liteforms chat proxy endpoint." },
   "browser-local-gemma": { support: "supported", reason: "Runs entirely in the user's browser." },
   "browser-local-qwen": { support: "supported", reason: "Runs entirely in the user's browser." },
   openai: { support: "supported", reason: "Uses a hosted API endpoint." },

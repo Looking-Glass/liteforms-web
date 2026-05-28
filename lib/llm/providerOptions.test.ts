@@ -8,6 +8,19 @@ import {
 } from "./providerOptions";
 
 describe("LLM_PROVIDER_OPTIONS", () => {
+  it("makes Liteforms hosted proxy the first no-credential provider option", () => {
+    const option = LLM_PROVIDER_OPTIONS[0];
+    expect(option).toMatchObject({
+      id: "liteforms-proxy",
+      label: "Liteforms hosted proxy",
+      tested: true,
+      defaultModel: "gpt-4o",
+      defaultBaseUrl: "https://blocks.glass/api/liteforms/chat_proxy_stream"
+    });
+    expect(option.models).toEqual([{ id: "gpt-4o", label: "Liteforms server default" }]);
+    expect(CREDENTIAL_PROVIDER_IDS).not.toContain("liteforms-proxy");
+  });
+
   it("matches OpenClaw's ChatGPT subscription provider naming", () => {
     const option = LLM_PROVIDER_OPTIONS.find((provider) => provider.id === "openai-codex");
     expect(option).toMatchObject({
@@ -97,6 +110,7 @@ describe("LLM_PROVIDER_OPTIONS", () => {
   it("keeps browser-local and hosted API providers visible in Vercel deployments", () => {
     const visibleIds = getVisibleLlmProviderOptions({ isVercelDeployment: true }).map((provider) => provider.id);
     expect(visibleIds).toEqual(expect.arrayContaining([
+      "liteforms-proxy",
       "browser-local-gemma",
       "browser-local-qwen",
       "anthropic",

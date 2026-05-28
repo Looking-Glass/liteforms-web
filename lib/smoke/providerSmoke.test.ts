@@ -25,6 +25,7 @@ describe("provider smoke test harness", () => {
     const ids = cases.map((testCase) => `${testCase.kind}:${testCase.provider}`);
 
     expect(ids).toContain("llm:openai");
+    expect(ids).toContain("llm:liteforms-proxy");
     expect(ids).toContain("llm:anthropic");
     expect(ids).toContain("llm:google-live");
     expect(ids).toContain("llm:openai-realtime");
@@ -104,6 +105,35 @@ describe("provider smoke test harness", () => {
       skipped: true,
       detail: expect.stringContaining("OPENAI_API_KEY")
     });
+  });
+
+  it("runs the Liteforms hosted proxy smoke call without an API key", async () => {
+    const liteformsProxy = buildSmokeProviderCases().find(
+      (testCase) => testCase.kind === "llm" && testCase.provider === "liteforms-proxy"
+    );
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'));
+            controller.close();
+          }
+        })
+      )
+    );
+
+    expect(liteformsProxy).toBeDefined();
+    expect(liteformsProxy?.envNames).toEqual([]);
+    await expect(runSmokeProviderCase(liteformsProxy!, {
+      env: {},
+      fetch: fetchMock
+    })).resolves.toMatchObject({ skipped: false });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://blocks.glass/api/liteforms/chat_proxy_stream",
+      expect.objectContaining({
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) })
+      })
+    );
   });
 
   it("runs an LLM smoke call through the configured adapter when a key is present", async () => {

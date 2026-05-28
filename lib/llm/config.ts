@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { LITEFORMS_PROXY_DEFAULT_BASE_URL, LITEFORMS_PROXY_DEFAULT_MODEL } from "./liteformsProxy";
 import type { BaseProviderConfig } from "./types";
 
 const defaultBaseUrls = {
+  "liteforms-proxy": LITEFORMS_PROXY_DEFAULT_BASE_URL,
   "browser-local-gemma": undefined,
   "browser-local-qwen": undefined,
   openai: "https://api.openai.com/v1",
@@ -26,6 +28,7 @@ const defaultBaseUrls = {
 } satisfies Record<BaseProviderConfig["provider"], string | undefined>;
 
 const defaultEndpointModes = {
+  "liteforms-proxy": "native",
   "browser-local-gemma": "native",
   "browser-local-qwen": "native",
   openai: "openai-compatible",
@@ -72,6 +75,7 @@ function migrateLegacyProviderId(input: unknown) {
 export const providerConfigSchema = z
   .preprocess(migrateLegacyProviderId, z.object({
     provider: z.enum([
+      "liteforms-proxy",
       "browser-local-gemma",
       "browser-local-qwen",
       "openai",
@@ -101,11 +105,12 @@ export const providerConfigSchema = z
   }))
   .transform((config) => ({
     ...config,
+    model: config.provider === "liteforms-proxy" ? LITEFORMS_PROXY_DEFAULT_MODEL : config.model,
     baseUrl: config.baseUrl ?? defaultBaseUrls[config.provider],
     endpointMode: config.endpointMode ?? defaultEndpointModes[config.provider]
   }))
   .superRefine((config, ctx) => {
-    if (config.baseUrl && liteformsProxyPattern.test(config.baseUrl)) {
+    if (config.provider !== "liteforms-proxy" && config.baseUrl && liteformsProxyPattern.test(config.baseUrl)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "MVP LLM requests must not route through a Liteforms proxy server.",
@@ -116,8 +121,8 @@ export const providerConfigSchema = z
 
 export function getDefaultProviderConfig(): BaseProviderConfig {
   return {
-    provider: "browser-local-gemma",
-    model: "onnx-community/gemma-4-E2B-it-ONNX",
+    provider: "liteforms-proxy",
+    model: LITEFORMS_PROXY_DEFAULT_MODEL,
     endpointMode: "native"
   };
 }
@@ -132,6 +137,7 @@ export function normalizeProviderConfig(config: BaseProviderConfig): BaseProvide
 
 export function getProviderLabel(provider: BaseProviderConfig["provider"]) {
   return {
+    "liteforms-proxy": "Liteforms hosted proxy",
     "browser-local-gemma": "Browser local (Gemma)",
     "browser-local-qwen": "Browser local (Qwen)",
     openai: "OpenAI API",

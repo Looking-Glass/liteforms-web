@@ -273,6 +273,7 @@ describe("OnboardingModal LLM step", () => {
   it("keeps browser-local and hosted LLM providers visible in Vercel deployments", () => {
     renderModal({ isVercelDeployment: true });
     goToLlmStep();
+    expect(screen.getByRole("option", { name: /liteforms hosted proxy/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /gemma 4 e2b/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /qwen 3\.5 0\.8b/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /anthropic api/i })).toBeInTheDocument();
@@ -281,10 +282,14 @@ describe("OnboardingModal LLM step", () => {
     expect(screen.getByRole("option", { name: /google live/i })).toBeInTheDocument();
   });
 
-  it("defaults to Anthropic API (anthropic)", () => {
+  it("defaults to Liteforms hosted proxy", () => {
     renderModal();
     goToLlmStep();
-    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("anthropic");
+    expect(screen.getByRole("combobox", { name: /model provider/i })).toHaveValue("liteforms-proxy");
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /endpoint/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Credential")).not.toBeInTheDocument();
   });
 
   it("hides model dropdown for browser-local-gemma (only one model)", () => {
@@ -366,7 +371,7 @@ describe("OnboardingModal LLM step", () => {
     renderModal();
     goToLlmStep();
     fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
-      target: { value: "elevenlabs" }
+      target: { value: "openai" }
     });
     expect(screen.getByRole("textbox", { name: /endpoint/i })).toBeInTheDocument();
   });
@@ -417,7 +422,7 @@ describe("OnboardingModal LLM step", () => {
   it("hides endpoint field for browser-local-gemma", () => {
     renderModal();
     goToLlmStep();
-    // Explicitly select browser-local-gemma (default is now anthropic which shows endpoint)
+    // Explicitly select browser-local-gemma (default is a hosted provider)
     fireEvent.change(screen.getByRole("combobox", { name: /model provider/i }), {
       target: { value: "browser-local-gemma" }
     });
@@ -510,7 +515,7 @@ describe("OnboardingModal STT step", () => {
     fireEvent.click(screen.getByRole("button", { name: /start liteforms/i }));
     expect(onUseCustom).toHaveBeenCalledOnce();
     expect(onUseCustom).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: "anthropic" }),
+      expect.objectContaining({ provider: "liteforms-proxy", model: "gpt-4o" }),
       expect.objectContaining({ provider: "kokoro" }),
       expect.objectContaining({ provider: "distil-whisper" })
     );
@@ -1362,11 +1367,11 @@ describe("OnboardingModal Qwen 3.5 local provider", () => {
     expect(options[options.length - 1].value).toBe("browser-local-gemma");
   });
 
-  it("Anthropic is the first option in the provider list", () => {
+  it("Liteforms hosted proxy is the first option in the provider list", () => {
     renderModal();
     // Already on LLM step (SKIP_WELCOME_SCREEN=true)
     const select = screen.getByRole("combobox", { name: /model provider/i }) as HTMLSelectElement;
-    expect(select.options[0].value).toBe("anthropic");
+    expect(select.options[0].value).toBe("liteforms-proxy");
   });
 });
 

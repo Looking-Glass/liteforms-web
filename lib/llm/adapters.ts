@@ -1,4 +1,5 @@
 import { normalizeProviderConfig } from "./config";
+import { LITEFORMS_PROXY_DEFAULT_BASE_URL } from "./liteformsProxy";
 import { LocalGemmaWorkerClient } from "./localGemmaWorker";
 import { buildChatMessages } from "./persona";
 import { parseAnthropicSseLine, parseOllamaJsonLine, parseOpenAiCompatibleSseLine } from "./stream-parsers";
@@ -12,6 +13,7 @@ type CreateAdapterInput = {
 
 /** Cloud providers whose APIs block direct browser requests due to CORS. */
 const CLOUD_PROVIDER_IDS = new Set<string>([
+  "liteforms-proxy",
   "openai", "anthropic", "google", "xai", "mistral",
   "cerebras", "nvidia", "openrouter", "groq", "together", "fireworks", "qwen"
 ]);
@@ -41,6 +43,9 @@ export function createLlmAdapter(input: CreateAdapterInput): LlmAdapter {
 
       if (normalizedRequest.config.provider === "anthropic") {
         return streamAnthropic(normalizedRequest, fetchImpl);
+      }
+      if (normalizedRequest.config.provider === "liteforms-proxy") {
+        return streamLiteformsProxy(normalizedRequest, fetchImpl);
       }
       if (normalizedRequest.config.provider === "ollama" && normalizedRequest.config.endpointMode !== "openai-compatible") {
         return streamOllama(normalizedRequest, fetchImpl);
@@ -108,6 +113,32 @@ async function* streamOpenAiCompatible(request: ChatRequest, fetchImpl: FetchLik
     method: "POST",
     headers,
     body: JSON.stringify({ model: config.model, messages, stream: true })
+  });
+
+  yield* readTextStream(response, parseOpenAiCompatibleSseLine, config);
+}
+
+async function* streamLiteformsProxy(request: ChatRequest, fetchImpl: FetchLike): AsyncIterable<string> {
+  const config = normalizeProviderConfig(request.config);
+  const messages = buildChatMessages({
+    provider: config.provider,
+    persona: request.persona,
+    messages: request.messages
+  });
+
+  const response = await fetchImpl(config.baseUrl ?? LITEFORMS_PROXY_DEFAULT_BASE_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "X-Slack-No-Retry": "1"
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages,
+      max_tokens: 1024,
+      stream: true
+    })
   });
 
   yield* readTextStream(response, parseOpenAiCompatibleSseLine, config);
@@ -182,7 +213,7 @@ async function* readTextStream(
   config: BaseProviderConfig
 ): AsyncIterable<string> {
   if (!response.ok) {
-    throw new Error(formatProviderResponseError(response, config));
+    throw new Error(await formatProviderResponseError(response, config));
   }
   if (!response.body) {
     return;
@@ -214,7 +245,13 @@ async function* readTextStream(
   }
 }
 
-function formatProviderResponseError(response: Response, config: BaseProviderConfig) {
+async function formatProviderResponseError(response: Response, config: BaseProviderConfig) {
+  const detail = await readProviderErrorDetail(response);
+  if (config.provider === "liteforms-proxy") {
+    return detail
+      ? `Liteforms hosted proxy returned ${response.status}: ${detail}`
+      : `Liteforms hosted proxy returned ${response.status}.`;
+  }
   if (config.provider === "openclaw" && response.status === 404) {
     return [
       "OpenClaw returned 404 for /v1/chat/completions.",
@@ -229,7 +266,28 @@ function formatProviderResponseError(response: Response, config: BaseProviderCon
       `Configured endpoint: ${trimTrailingSlash(requireBaseUrl(config))}/chat/completions`
     ].join(" ");
   }
-  return `LLM provider request failed with ${response.status}`;
+  return detail ? `LLM provider request failed with ${response.status}: ${detail}` : `LLM provider request failed with ${response.status}`;
+}
+
+async function readProviderErrorDetail(response: Response) {
+  const body = await response.text().catch(() => "");
+  if (!body.trim()) return "";
+  try {
+    const parsed = JSON.parse(body) as { message?: unknown; error?: unknown };
+    if (typeof parsed.message === "string") return parsed.message;
+    if (typeof parsed.error === "string") return parsed.error;
+    if (
+      parsed.error &&
+      typeof parsed.error === "object" &&
+      "message" in parsed.error &&
+      typeof parsed.error.message === "string"
+    ) {
+      return parsed.error.message;
+    }
+  } catch {
+    // Fall through to the raw body text below.
+  }
+  return body.trim();
 }
 
 export function providerNeedsCredential(config: BaseProviderConfig) {

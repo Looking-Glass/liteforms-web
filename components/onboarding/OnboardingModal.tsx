@@ -85,12 +85,7 @@ export function OnboardingModal({
   const llmProviderOptions = getVisibleLlmProviderOptions({ isVercelDeployment });
   const ttsProviderOptions = getVisibleTtsProviderOptions();
   const sttProviderOptions = getVisibleSttProviderOptions();
-  const defaultInitialConfig: BaseProviderConfig = {
-    provider: "anthropic",
-    model: "claude-opus-4-7",
-    baseUrl: "https://api.anthropic.com",
-    endpointMode: "native"
-  };
+  const defaultInitialConfig: BaseProviderConfig = getDefaultProviderConfig();
   const visibleInitialLlmConfig =
     initialLlmConfig && llmProviderOptions.some((provider) => provider.id === initialLlmConfig.provider)
       ? initialLlmConfig
@@ -229,7 +224,11 @@ export function OnboardingModal({
     localModelLoadState.every((m) => m.status === "ready" || m.status === "error");
 
   const providerMeta = llmProviderOptions.find((p) => p.id === config.provider) ?? llmProviderOptions[0];
-  const showEndpoint = config.provider !== "browser-local-gemma" && config.provider !== "browser-local-qwen";
+  const hideModelDetails =
+    config.provider === "liteforms-proxy" ||
+    config.provider === "browser-local-gemma" ||
+    config.provider === "browser-local-qwen";
+  const showEndpoint = !hideModelDetails;
   const showCredential = credentialProviders.includes(config.provider);
   const isOpenAiCodex = config.provider === "openai-codex";
   const isClaudeCli = config.provider === "claude-cli";
@@ -394,7 +393,7 @@ export function OnboardingModal({
                 ))}
               </select>
             </label>
-            {config.provider !== "browser-local-gemma" && config.provider !== "browser-local-qwen" && (
+            {!hideModelDetails && (
               <label>
                 Model
                 {providerMeta.models ? (

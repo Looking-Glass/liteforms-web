@@ -1,4 +1,5 @@
 export type LlmProviderId =
+  | "liteforms-proxy"
   | "browser-local-gemma"
   | "browser-local-qwen"
   | "openai"

@@ -2,12 +2,13 @@
 
 Liteforms Web is a browser-first avatar chat app built with Next.js, React, TypeScript, and Three.js. It renders a VRM avatar, lets users chat with the character, and supports local or external LLM, speech-to-text, and text-to-speech providers.
 
-The default path is designed to work without a hosted account system: users can run the app locally, use browser-local models, or enter their own provider credentials in the app.
+The first-run LLM default uses the Liteforms hosted proxy, so users can start chatting without configuring an API key. Users can still switch to browser-local models or enter their own provider credentials in the app.
 
 ## Features
 
 - Realtime 3D avatar scene with VRM loading, animation, expression, mouth movement, and Looking Glass/WebXR support.
 - Character editor for name, pronouns, personality, custom VRM upload, and quick links to VRoid Hub and Open Source Avatars.
+- Liteforms hosted LLM proxy by default, using the server-managed model behind `https://blocks.glass/api/liteforms/chat_proxy_stream`.
 - Browser-local LLM options using ONNX/Transformers models.
 - Browser-local Kokoro TTS and Distil-Whisper STT.
 - External LLM providers including OpenAI-compatible APIs, Anthropic, Google AI Studio, Google Live, xAI, Mistral, Cerebras, NVIDIA, OpenRouter, Groq, Together, Fireworks, Qwen Cloud, Ollama, LM Studio, OpenClaw Gateway, OpenAI Codex, and Claude CLI.
@@ -58,13 +59,13 @@ npm run test:watch
 
 ## Configuration
 
-Most provider configuration happens inside the app UI. Users can choose the built-in local path or configure their own LLM, TTS, and STT providers.
+Most provider configuration happens inside the app UI. The default LLM provider is `liteforms-proxy`, which calls the Liteforms hosted proxy and does not require a user API key. Users can choose the built-in local path or configure their own LLM, TTS, and STT providers.
 
 Provider smoke tests read `.env`, `.env.local`, `.env.test`, and `.env.test.local` from the project root. They skip any provider without a matching API key. Shared key names such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `GEMINI_API_KEY`, `ELEVENLABS_API_KEY`, `DEEPGRAM_API_KEY`, `MISTRAL_API_KEY`, and provider-specific names are supported. Use `LITEFORMS_LLM_<PROVIDER>_API_KEY`, `LITEFORMS_TTS_<PROVIDER>_API_KEY`, or `LITEFORMS_STT_<PROVIDER>_API_KEY` when one account needs different keys per capability.
 
 ## Credentials And Privacy
 
-Provider API keys and tokens entered in the app are stored in browser-local storage, not committed to the repository. The `.gitignore` excludes local environment files such as `.env`, `.env.local`, and `.env*.local`.
+Provider API keys and tokens entered in the app are stored in browser-local storage, not committed to the repository. The default Liteforms hosted proxy does not embed a secret in the client; requests are sent to the Liteforms server, which owns the backend model configuration. The `.gitignore` excludes local environment files such as `.env`, `.env.local`, and `.env*.local`.
 
 Do not commit real provider credentials or private model assets. If you add a new provider, keep credentials user-supplied and local unless there is a deliberate server-side integration.
 

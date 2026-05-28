@@ -127,7 +127,7 @@ export function buildSmokeProviderCases(): SmokeProviderCase[] {
         kind: "llm",
         provider: option.id,
         label: option.label,
-        envNames: envNamesFor("llm", option.id),
+        envNames: option.id === "liteforms-proxy" ? [] : envNamesFor("llm", option.id),
         config: {
           provider: option.id,
           model: SMOKE_LLM_MODEL_OVERRIDES[option.id] ?? option.defaultModel,
@@ -178,24 +178,25 @@ export async function runSmokeProviderCase(
   options: { env?: EnvMap; fetch?: typeof fetch; WebSocketCtor?: typeof WebSocket } = {}
 ): Promise<SmokeProviderResult> {
   const credential = resolveSmokeCredential(testCase, options.env ?? loadSmokeEnv());
-  if (!credential) {
+  const canRunWithoutCredential = isLiteformsProxySmokeCase(testCase);
+  if (!credential && !canRunWithoutCredential) {
     return { skipped: true, detail: `missing ${testCase.envNames.join(" or ")}` };
   }
 
   if (testCase.kind === "llm") {
     if (testCase.provider === "google-live") {
       return runGoogleLiveSmoke(
-        { ...testCase.config, provider: "google-live", credential: credential.value, voice: GOOGLE_LIVE_DEFAULT_VOICE },
+        { ...testCase.config, provider: "google-live", credential: credential?.value, voice: GOOGLE_LIVE_DEFAULT_VOICE },
         options.WebSocketCtor
       );
     }
     if (testCase.provider === "openai-realtime") {
       return runOpenAiRealtimeSmoke(
-        { ...testCase.config, provider: "openai-realtime", credential: credential.value, voice: OPENAI_REALTIME_DEFAULT_VOICE },
+        { ...testCase.config, provider: "openai-realtime", credential: credential?.value, voice: OPENAI_REALTIME_DEFAULT_VOICE },
         options.WebSocketCtor
       );
     }
-    const config = { ...testCase.config, credential: credential.value };
+    const config = credential ? { ...testCase.config, credential: credential.value } : testCase.config;
     const text = await collectText(
       createLlmAdapter({ config, fetch: options.fetch ?? fetch }).streamText({
         config,
@@ -203,10 +204,11 @@ export async function runSmokeProviderCase(
       })
     );
     if (!text.trim()) throw new Error(`${testCase.label} returned an empty LLM response.`);
-    return { skipped: false, detail: `${credential.envName}: ${text.trim().slice(0, 80)}` };
+    return { skipped: false, detail: `${credential?.envName ?? "no API key"}: ${text.trim().slice(0, 80)}` };
   }
 
   if (testCase.kind === "tts") {
+    if (!credential) throw new Error(`${testCase.label} requires an API key for smoke testing.`);
     const result = await createTtsAdapter({
       config: { ...testCase.config, credential: credential.value } as TtsConfig,
       fetch: options.fetch ?? fetch
@@ -215,6 +217,7 @@ export async function runSmokeProviderCase(
     return { skipped: false, detail: `${credential.envName}: ${result.mimeType}, ${result.audio.byteLength} bytes` };
   }
 
+  if (!credential) throw new Error(`${testCase.label} requires an API key for smoke testing.`);
   const result = await createAsrAdapter({
     config: { ...testCase.config, credential: credential.value } as AsrConfig,
     fetch: options.fetch ?? fetch
@@ -222,6 +225,10 @@ export async function runSmokeProviderCase(
   if (typeof result.text !== "string") throw new Error(`${testCase.label} returned a malformed STT response.`);
   if (!result.text.trim()) throw new Error(`${testCase.label} returned an empty transcript.`);
   return { skipped: false, detail: `${credential.envName}: "${result.text.trim().slice(0, 80)}"` };
+}
+
+function isLiteformsProxySmokeCase(testCase: SmokeProviderCase) {
+  return testCase.kind === "llm" && testCase.provider === "liteforms-proxy";
 }
 
 function envNamesFor(kind: SmokeProviderKind, provider: string) {

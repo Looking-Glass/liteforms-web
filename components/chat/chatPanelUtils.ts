@@ -22,6 +22,7 @@ export function formatCacheUsage(usage: CacheUsage): string {
 
 export function updateEndpointMode(providerId: LlmProviderId): "native" | "openai-compatible" {
   return providerId === "ollama" ||
+    providerId === "liteforms-proxy" ||
     providerId === "browser-local-gemma" ||
     providerId === "browser-local-qwen"
     ? "native"

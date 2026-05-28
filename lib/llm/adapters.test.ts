@@ -67,6 +67,59 @@ describe("LLM adapters", () => {
     );
   });
 
+  it("streams the Liteforms proxy through the hosted chat proxy endpoint without user credentials", async () => {
+    const fetchMock = vi.fn(async () =>
+      streamResponse(['data: {"choices":[{"delta":{"content":"Liteforms"}}]}\n\n', "data: [DONE]\n\n"])
+    );
+    const config: BaseProviderConfig = { provider: "liteforms-proxy", model: "gpt-4o" };
+    const adapter = createLlmAdapter({ config, fetch: fetchMock });
+
+    await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+      "Liteforms"
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://blocks.glass/api/liteforms/chat_proxy_stream",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.not.objectContaining({ Authorization: expect.any(String) }),
+        body: expect.stringContaining('"model":"gpt-4o"')
+      })
+    );
+  });
+
+  it("surfaces Liteforms proxy backend error details", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ message: "Unauthorized", code: "UNAUTHORIZED" }), { status: 401 })
+    );
+    const config: BaseProviderConfig = { provider: "liteforms-proxy", model: "gpt-4o" };
+    const adapter = createLlmAdapter({ config, fetch: fetchMock });
+
+    await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).rejects.toThrow(
+      "Liteforms hosted proxy returned 401: Unauthorized"
+    );
+  });
+
+  it("does not send stale Liteforms proxy placeholder models from saved sessions", async () => {
+    const fetchMock = vi.fn(async () =>
+      streamResponse(['data: {"choices":[{"delta":{"content":"Liteforms"}}]}\n\n', "data: [DONE]\n\n"])
+    );
+    const config: BaseProviderConfig = { provider: "liteforms-proxy", model: "liteforms/default" };
+    const adapter = createLlmAdapter({ config, fetch: fetchMock });
+
+    await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+      "Liteforms"
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://blocks.glass/api/liteforms/chat_proxy_stream",
+      expect.objectContaining({
+        body: expect.stringContaining('"model":"gpt-4o"')
+      })
+    );
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).not.toContain("liteforms/default");
+  });
+
   it("streams OpenClaw through its OpenAI-compatible HTTP gateway while keeping the OpenClaw provider", async () => {
     const fetchMock = vi.fn(async () =>
       streamResponse(['data: {"choices":[{"delta":{"content":"Claw"}}]}\n\n', "data: [DONE]\n\n"])
@@ -211,6 +264,35 @@ describe("LLM adapters", () => {
       expect(proxyFetchMock).toHaveBeenCalledWith(
         "/api/llm/stream",
         expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    it("routes Liteforms proxy through the local Next proxy when no custom fetch is provided", async () => {
+      const proxyFetchMock = vi.fn(async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("Liteforms proxied"));
+              controller.close();
+            }
+          })
+        )
+      );
+      vi.stubGlobal("fetch", proxyFetchMock);
+
+      const config: BaseProviderConfig = { provider: "liteforms-proxy", model: "gpt-4o" };
+      const adapter = createLlmAdapter({ config });
+
+      await expect(collect(adapter.streamText({ config, messages: [{ role: "user", content: "Hi" }] }))).resolves.toBe(
+        "Liteforms proxied"
+      );
+
+      expect(proxyFetchMock).toHaveBeenCalledWith(
+        "/api/llm/stream",
+        expect.objectContaining({
+          method: "POST",
+          body: expect.stringContaining('"provider":"liteforms-proxy"')
+        })
       );
     });
 

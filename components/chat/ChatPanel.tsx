@@ -1182,7 +1182,10 @@ export function ChatPanel({
 
           <div className="model-settings">
             <SettingsReadout label="Model provider" value={getProviderLabel(config.provider)} />
-            <SettingsReadout label="Model" value={config.model} />
+            <SettingsReadout
+              label="Model"
+              value={config.provider === "liteforms-proxy" ? "Liteforms server default" : config.model}
+            />
           </div>
           {isRealtimeVoiceProvider(config.provider) || isActiveRealtimeVoiceConfig(realtimeVoiceConfig) ? (
             <div className="speech-settings">
