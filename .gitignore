@@ -12,9 +12,11 @@
 /.next/
 /out/
 dist/
+/dist-electron/
 
 # production
 /build
+/release/
 
 # misc
 .DS_Store

@@ -1,8 +1,11 @@
 import type { NextConfig } from "next";
 import path from "node:path";
 
+const isElectronBuild = process.env.LITEFORMS_ELECTRON_BUILD === "1";
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  output: isElectronBuild ? "standalone" : undefined,
   env: {
     NEXT_PUBLIC_LITEFORMS_VERCEL_DEPLOYMENT: process.env.VERCEL === "1" ? "1" : "0"
   },

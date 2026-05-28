@@ -50,11 +50,31 @@ If port `3000` is already in use, Next.js will choose another port.
 ```bash
 npm run dev       # Start the Next.js development server
 npm run build     # Create a production build
+npm run build:electron # Build the Electron main process and standalone Next app
+npm run dist:electron  # Package the Electron app with electron-builder
 npm run lint      # Run ESLint
 npm run test      # Run the Vitest suite
 npm run test:smoke:providers # Ping cloud providers with API keys from .env
 npm run test:watch
 ```
+
+## Electron Build
+
+The Electron deployment packages the same Next.js app with a minimal native shell. The web build remains the default; `npm run build:electron` sets `LITEFORMS_ELECTRON_BUILD=1` so Next emits a standalone server for Electron packaging.
+
+For local Electron development, start the web server in one terminal:
+
+```bash
+npm run dev
+```
+
+Then launch Electron in another:
+
+```bash
+npm run dev:electron
+```
+
+The packaged Electron app starts its bundled Next server on a loopback-only port and opens that local URL. Provider credentials still come from the app UI or local browser storage. Local `.env` files are excluded from the Electron package configuration.
 
 ## Configuration
 
@@ -73,8 +93,10 @@ Do not commit real provider credentials or private model assets. If you add a ne
 ```text
 app/          Next.js app routes and API routes
 components/   React UI and avatar/chat/onboarding components
+electron/     Electron main/preload code and build configuration tests
 lib/          Provider adapters, storage, avatar, speech, and API helpers
 public/       Bundled VRM/GLB/VRMA assets
+scripts/      Build preparation helpers
 types/        Shared type declarations
 workers/      Browser workers for local model execution
 ```
