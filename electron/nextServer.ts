@@ -3,7 +3,7 @@ import net from "node:net";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-type EnvMap = Record<string, string | undefined>;
+export type EnvMap = Record<string, string | undefined>;
 type NextServerEnv = Record<string, string> & {
   ELECTRON_RUN_AS_NODE: "1";
   HOSTNAME: "127.0.0.1";
@@ -48,7 +48,7 @@ const FORWARDED_ENV_KEYS = [
   "XDG_DATA_HOME"
 ];
 
-export function createNextServerEnv({ baseEnv = process.env, port }: { baseEnv?: EnvMap; port: number }): NextServerEnv {
+export function createForwardedShellEnv(baseEnv: EnvMap = process.env) {
   const env: Record<string, string> = {};
 
   for (const key of FORWARDED_ENV_KEYS) {
@@ -58,8 +58,12 @@ export function createNextServerEnv({ baseEnv = process.env, port }: { baseEnv?:
     }
   }
 
+  return env;
+}
+
+export function createNextServerEnv({ baseEnv = process.env, port }: { baseEnv?: EnvMap; port: number }): NextServerEnv {
   return {
-    ...env,
+    ...createForwardedShellEnv(baseEnv),
     ELECTRON_RUN_AS_NODE: "1",
     HOSTNAME: "127.0.0.1",
     NEXT_TELEMETRY_DISABLED: "1",

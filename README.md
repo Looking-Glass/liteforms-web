@@ -19,7 +19,7 @@ The default path is designed to work without a hosted account system: users can 
 - Node.js 20 or newer is recommended.
 - npm.
 - A modern Chromium-based browser is recommended for local model and audio features.
-- Looking Glass Go/WebXR use requires Looking Glass Bridge. The app checks Bridge through the official `@lookingglass/bridge` SDK and shows a dismissible setup banner when Bridge is not reachable.
+- Looking Glass Go/WebXR use requires a Bridge driver. Browser builds check the installed Looking Glass Bridge runtime through `@lookingglass/bridge`; Electron builds first probe the bundled native Bridge SDK driver.
 
 Local browser models can be large. The first run may download model assets and can take a while depending on network speed and hardware.
 
@@ -76,6 +76,8 @@ npm run dev:electron
 
 The packaged Electron app starts its bundled Next server on a loopback-only port and opens that local URL. Provider credentials still come from the app UI or local browser storage. Local `.env` files are excluded from the Electron package configuration.
 
+Electron packages native Looking Glass Bridge SDK assets from `native/bridge/<platform-arch>` into `resources/bridge/<platform-arch>`. Windows x64 assets are included. macOS packaging expects `native/bridge/darwin-x64/libbridge_inproc.dylib` and/or `native/bridge/darwin-arm64/libbridge_inproc.dylib` plus their adjacent dependencies before building macOS installers.
+
 ## Configuration
 
 Most provider configuration happens inside the app UI. Users can choose the built-in local path or configure their own LLM, TTS, and STT providers.
@@ -110,7 +112,7 @@ workers/      Browser workers for local model execution
 
 ## Open-Source Notes
 
-While Liteforms is open source, packages used by the project may or may not be. Looking Glass integration uses the official `@lookingglass/bridge` SDK for Bridge status checks and `@lookingglass/webxr` for WebXR display support.
+While Liteforms is open source, packages used by the project may or may not be. Looking Glass integration uses the official `@lookingglass/bridge` SDK for browser Bridge status checks, bundled Bridge SDK native assets for Electron, and `@lookingglass/webxr` for WebXR display support.
 
 ## License
 

@@ -12,7 +12,7 @@ describe("BridgeRequiredBanner", () => {
 
     render(<BridgeRequiredBanner onDismiss={onDismiss} />);
 
-    expect(screen.getByText("Using Liteforms with a Looking Glass Go requires Bridge.")).toBeInTheDocument();
+    expect(screen.getByText("Using Liteforms with a Looking Glass Go requires a Bridge driver.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Download Bridge" })).toHaveAttribute(
       "href",
       "https://look.glass/bridge"

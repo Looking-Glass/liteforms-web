@@ -1,12 +1,14 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { registerNativeBridgeIpc } from "./nativeBridge";
 import { createNextServerEnv, getAvailablePort, resolveStandaloneDir, waitForHttpServer } from "./nextServer";
 
 let mainWindow: BrowserWindow | null = null;
 let nextServerProcess: ChildProcess | null = null;
 let appUrl: string | null = null;
+const nativeBridgeService = registerNativeBridgeIpc(ipcMain);
 
 async function resolveAppUrl() {
   const devServerUrl = process.env.LITEFORMS_ELECTRON_DEV_SERVER_URL;
@@ -133,7 +135,10 @@ app.whenReady().then(async () => {
   app.quit();
 });
 
-app.on("before-quit", stopNextServer);
+app.on("before-quit", () => {
+  stopNextServer();
+  nativeBridgeService.dispose();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

@@ -23,4 +23,20 @@ describe("checkLookingGlassBridgeConnection", () => {
 
     await expect(checkLookingGlassBridgeConnection({ getBridgeClient })).resolves.toBe(false);
   });
+
+  it("uses the native Electron Bridge driver status when available", async () => {
+    const status = vi.fn().mockResolvedValue(false);
+    const getNativeBridgeDriverStatus = vi.fn().mockResolvedValue({ available: true, source: "native" });
+
+    await expect(
+      checkLookingGlassBridgeConnection({
+        getBridgeClient: () => ({ status }),
+        getNativeBridgeDriverStatus,
+        hasNativeBridgeApi: () => true,
+      })
+    ).resolves.toBe(true);
+
+    expect(getNativeBridgeDriverStatus).toHaveBeenCalledOnce();
+    expect(status).not.toHaveBeenCalled();
+  });
 });

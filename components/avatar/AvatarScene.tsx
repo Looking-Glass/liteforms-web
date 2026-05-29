@@ -57,6 +57,11 @@ import {
   openHldHologramWindow,
   shouldHideHologramButtonForScreen,
 } from "@/lib/avatar/hologramWindow";
+import {
+  applyNativeLookingGlassBridgeCalibration,
+  getNativeLookingGlassBridgeState,
+  hasNativeLookingGlassBridgeApi,
+} from "@/lib/avatar/nativeLookingGlassBridge";
 import { installEditableKeyboardEventShield } from "@/lib/avatar/keyboardEventShield";
 import { createModelDragRotationController } from "@/lib/avatar/modelDragRotation";
 import {
@@ -271,6 +276,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let modelPointerCancelListener: ((event: PointerEvent) => void) | undefined;
     let lkgControlsObserver: MutationObserver | undefined;
     let vrButtonTextObserver: MutationObserver | undefined;
+    let nativeBridgeCalibrationRetryId: number | undefined;
     let lkgConfigChangeCleanup: (() => void) | undefined;
     let xrSessionEndCleanup: (() => void) | undefined;
     let exitHldFallback: (() => void) | undefined;
@@ -286,6 +292,25 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       if (!lkgInitialized) {
         new LookingGlassWebXRPolyfill();
         lkgInitialized = true;
+      }
+
+      const syncNativeBridgeCalibration = async () => {
+        const nativeBridgeState = await getNativeLookingGlassBridgeState();
+        if (disposed) return;
+
+        if (applyNativeLookingGlassBridgeCalibration(LookingGlassConfig, nativeBridgeState)) {
+          if (nativeBridgeCalibrationRetryId !== undefined) {
+            window.clearInterval(nativeBridgeCalibrationRetryId);
+            nativeBridgeCalibrationRetryId = undefined;
+          }
+        }
+      };
+
+      if (hasNativeLookingGlassBridgeApi()) {
+        void syncNativeBridgeCalibration();
+        nativeBridgeCalibrationRetryId = window.setInterval(() => {
+          void syncNativeBridgeCalibration();
+        }, 5000);
       }
 
       // 2. Three.js r150+ checks `typeof XRWebGLBinding !== 'undefined'` at
@@ -846,6 +871,9 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       }
       lkgControlsObserver?.disconnect();
       vrButtonTextObserver?.disconnect();
+      if (nativeBridgeCalibrationRetryId !== undefined) {
+        window.clearInterval(nativeBridgeCalibrationRetryId);
+      }
       editableKeyboardShieldCleanup?.();
       lkgConfigChangeCleanup?.();
       xrSessionEndCleanup?.();

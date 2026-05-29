@@ -1,4 +1,7 @@
-import { contextBridge } from "electron";
+import { contextBridge, ipcRenderer } from "electron";
+
+const nativeBridgeGetStateChannel = "liteforms:nativeBridge:getState";
+const nativeBridgeGetDriverStatusChannel = "liteforms:nativeBridge:getDriverStatus";
 
 const liteformsElectron = Object.freeze({
   isElectron: true,
@@ -7,6 +10,10 @@ const liteformsElectron = Object.freeze({
     chrome: process.versions.chrome,
     electron: process.versions.electron,
     node: process.versions.node
+  },
+  lookingGlassBridge: {
+    getDriverStatus: () => ipcRenderer.invoke(nativeBridgeGetDriverStatusChannel),
+    getState: () => ipcRenderer.invoke(nativeBridgeGetStateChannel)
   }
 });
 

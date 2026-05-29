@@ -5,7 +5,7 @@ type BridgeRequiredBannerProps = {
 export function BridgeRequiredBanner({ onDismiss }: BridgeRequiredBannerProps) {
   return (
     <section className="bridge-banner" role="region" aria-label="Looking Glass Bridge">
-      <p>Using Liteforms with a Looking Glass Go requires Bridge.</p>
+      <p>Using Liteforms with a Looking Glass Go requires a Bridge driver.</p>
       <div className="bridge-banner-actions">
         <a className="button-link btn-ghost" href="https://look.glass/bridge" target="_blank" rel="noreferrer">
           Download Bridge

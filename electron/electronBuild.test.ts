@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createNextServerEnv, resolveStandaloneDir } from "./nextServer";
+import { createForwardedShellEnv, createNextServerEnv, resolveStandaloneDir } from "./nextServer";
 
 const require = createRequire(import.meta.url);
 
@@ -56,6 +56,11 @@ describe("Electron build configuration", () => {
         "electron-builder": expect.any(String)
       })
     );
+    expect(pkg.dependencies).toEqual(
+      expect.objectContaining({
+        koffi: expect.any(String)
+      })
+    );
   });
 
   it("packages the standalone Next server without local environment files", () => {
@@ -72,6 +77,10 @@ describe("Electron build configuration", () => {
         "dist-electron/**",
         ".next/standalone/**",
         ".next/static/**",
+        "node_modules/@koromix/koffi-*/**",
+        "node_modules/koffi/**",
+        "native/bridge/*.md",
+        "native/bridge/*.txt",
         "public/**",
         "package.json",
         "!**/.env",
@@ -84,7 +93,18 @@ describe("Electron build configuration", () => {
         signAndEditExecutable: false
       })
     );
-    expect(builderConfig.asarUnpack).toEqual(expect.arrayContaining([".next/standalone/**"]));
+    expect(builderConfig.asarUnpack).toEqual(
+      expect.arrayContaining([".next/standalone/**", "node_modules/@koromix/koffi-*/**", "node_modules/koffi/**"])
+    );
+    expect(builderConfig.extraResources).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "native/bridge/win32-x64",
+          to: "bridge/win32-x64"
+        })
+      ])
+    );
+    expect(builderConfig.linux).toBeUndefined();
   });
 
   it("starts the packaged Next server without forwarding provider secrets from the shell", () => {
@@ -105,6 +125,24 @@ describe("Electron build configuration", () => {
         NEXT_TELEMETRY_DISABLED: "1",
         NODE_ENV: "production",
         PORT: "4173"
+      })
+    );
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.LITEFORMS_LLM_OPENAI_API_KEY).toBeUndefined();
+  });
+
+  it("uses a shared child-process env allowlist for native helpers", () => {
+    const env = createForwardedShellEnv({
+      Path: "C:\\Windows\\System32",
+      USERPROFILE: "C:\\Users\\Liteforms",
+      OPENAI_API_KEY: "test-openai-key",
+      LITEFORMS_LLM_OPENAI_API_KEY: "test-liteforms-key"
+    });
+
+    expect(env).toEqual(
+      expect.objectContaining({
+        Path: "C:\\Windows\\System32",
+        USERPROFILE: "C:\\Users\\Liteforms"
       })
     );
     expect(env.OPENAI_API_KEY).toBeUndefined();

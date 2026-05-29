@@ -26,6 +26,7 @@
     "@pixiv/three-vrm": "^3.5.2",
     "@pixiv/three-vrm-animation": "^3.5.2",
     "idb": "^8.0.0",
+    "koffi": "^3.0.2",
     "kokoro-js": "^1.2.1",
     "next": "^15.0.0",
     "onnxruntime-web": "^1.21.0",

@@ -12,6 +12,6 @@
     "sourceMap": false,
     "types": ["node"]
   },
-  "include": ["main.ts", "nextServer.ts", "preload.ts"],
+  "include": ["main.ts", "nativeBridge.ts", "nativeBridgePaths.ts", "nativeBridgeProbe.ts", "nextServer.ts", "preload.ts"],
   "exclude": ["*.test.ts"]
 }
