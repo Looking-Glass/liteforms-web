@@ -204,6 +204,7 @@ export function ChatPanel({
   const micModeRef = useRef<MicMode>(micMode);
   const lastAudioRef = useRef<Blob | null>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
+  const nextSubmitInputSourceRef = useRef<"text" | "audio">("text");
   const messageListRef = useRef<HTMLDivElement>(null);
   const localGemmaWorkerRef = useRef(new LocalGemmaWorkerClient());
   const kokoroWorkerRef = useRef(new KokoroWorkerClient());
@@ -528,6 +529,8 @@ export function ChatPanel({
     const form = event.currentTarget;
     const formData = new FormData(form);
     const content = String(formData.get("message") ?? "").trim();
+    const submitInputSource = nextSubmitInputSourceRef.current;
+    nextSubmitInputSourceRef.current = "text";
     if (!content || status === "streaming") {
       return;
     }
@@ -680,7 +683,7 @@ export function ChatPanel({
       setMessages([...nextMessages, { role: "assistant", content: finalSanitized }]);
       setStatus("idle");
       await drainTask;
-      if (!drainFailed && micModeRef.current === "dynamic" && !usesRealtimeVoice) {
+      if (!drainFailed && submitInputSource === "audio" && micModeRef.current === "dynamic" && !usesRealtimeVoice) {
         await startMicRecording();
       }
     } catch (caught) {
@@ -879,6 +882,7 @@ export function ChatPanel({
             if (input) {
               input.value = trimmed;
             }
+            nextSubmitInputSourceRef.current = "audio";
             composerFormRef.current?.requestSubmit();
           } else {
             setTranscript("");

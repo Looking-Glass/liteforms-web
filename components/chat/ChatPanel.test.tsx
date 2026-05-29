@@ -572,6 +572,15 @@ describe("mic auto-submit flow", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: label }));
   }
 
+  function mockOneChunkLlmResponse(text = "Hello there.") {
+    vi.mocked(createLlmAdapter).mockReturnValueOnce({
+      id: "browser-local-gemma",
+      streamText: vi.fn().mockReturnValue(
+        (async function* () { yield text; })()
+      )
+    });
+  }
+
   it("requests microphone permission when the panel mounts", async () => {
     renderPanel();
 
@@ -831,32 +840,37 @@ describe("mic auto-submit flow", () => {
     expect(vi.mocked(createLlmAdapter)).not.toHaveBeenCalled();
   });
 
-  it("auto-restarts mic recording after full LLM + TTS completion in dynamic mode", async () => {
-    vi.mocked(createLlmAdapter).mockReturnValueOnce({
-      id: "browser-local-gemma",
-      streamText: vi.fn().mockReturnValue(
-        (async function* () { yield "Hello there."; })()
-      )
-    });
+  it("does not auto-restart mic recording after typed text in dynamic mode", async () => {
+    mockOneChunkLlmResponse();
 
     renderPanel(); // default: dynamic mode
 
     fireEvent.change(screen.getByPlaceholderText("Type a message…"), { target: { value: "hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start dynamic recording" })).not.toBeDisabled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(createAsrRealtimeSession).not.toHaveBeenCalled();
+  });
+
+  it("auto-restarts mic recording after full LLM + TTS completion when dynamic input came from audio", async () => {
+    mockOneChunkLlmResponse();
+
+    renderPanel(); // default: dynamic mode
+
+    fireEvent.click(screen.getByRole("button", { name: "Start dynamic recording" }));
+    await waitFor(() => screen.getByRole("button", { name: "Listening for pause" }));
+
+    latestRealtimeCallbacks?.onTranscript?.("hi from mic", { final: true });
+
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Listening for pause" })).toBeInTheDocument();
     });
-    expect(createAsrRealtimeSession).toHaveBeenCalledTimes(1);
+    expect(createAsrRealtimeSession).toHaveBeenCalledTimes(2);
   });
 
   it("does not auto-restart mic recording after TTS in hold mode", async () => {
-    vi.mocked(createLlmAdapter).mockReturnValueOnce({
-      id: "browser-local-gemma",
-      streamText: vi.fn().mockReturnValue(
-        (async function* () { yield "Hello there."; })()
-      )
-    });
+    mockOneChunkLlmResponse();
 
     renderPanel();
     chooseMicMode("Hold");
@@ -870,12 +884,7 @@ describe("mic auto-submit flow", () => {
   });
 
   it("does not auto-restart mic recording after TTS in tap mode", async () => {
-    vi.mocked(createLlmAdapter).mockReturnValueOnce({
-      id: "browser-local-gemma",
-      streamText: vi.fn().mockReturnValue(
-        (async function* () { yield "Hello there."; })()
-      )
-    });
+    mockOneChunkLlmResponse();
 
     renderPanel();
     chooseMicMode("Tap");
