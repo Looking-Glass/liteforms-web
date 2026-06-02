@@ -24,6 +24,25 @@ const nativeBridgeResources = [
   { from: "native/bridge/darwin-arm64", to: "bridge/darwin-arm64", filter: ["**/*"] }
 ].filter(({ from }) => existsSync(from));
 
+// Do not package cross-platform native addons; Windows signing rejects non-PE .node files.
+const windowsNativeBinaryExcludes = [
+  "!**/node_modules/**/prebuilds/darwin*/**",
+  "!**/node_modules/**/prebuilds/linux*/**",
+  "!**/node_modules/**/prebuilds/win32-ia32/**",
+  "!**/node_modules/**/prebuilds/win32-arm64/**",
+  "!**/node_modules/**/bin/napi-*/darwin/**",
+  "!**/node_modules/**/bin/napi-*/linux/**",
+  "!**/node_modules/**/bin/napi-*/win32/ia32/**",
+  "!**/node_modules/**/bin/napi-*/win32/arm64/**"
+];
+
+const macNativeBinaryExcludes = [
+  "!**/node_modules/**/prebuilds/linux*/**",
+  "!**/node_modules/**/prebuilds/win32*/**",
+  "!**/node_modules/**/bin/napi-*/linux/**",
+  "!**/node_modules/**/bin/napi-*/win32/**"
+];
+
 module.exports = {
   appId: "org.liteforms.web",
   productName: "Liteforms",
@@ -61,10 +80,12 @@ module.exports = {
   extraResources: nativeBridgeResources,
   win: {
     ...windowsSigningConfig,
+    files: windowsNativeBinaryExcludes,
     signExts: [".dll", ".node"],
     target: ["nsis"]
   },
   mac: {
+    files: macNativeBinaryExcludes,
     target: ["dmg"],
     category: "public.app-category.entertainment",
     hardenedRuntime: true,

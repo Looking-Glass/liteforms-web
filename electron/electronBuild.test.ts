@@ -108,12 +108,28 @@ describe("Electron build configuration", () => {
     );
     expect(builderConfig.win).toEqual(
       expect.objectContaining({
+        files: expect.arrayContaining([
+          "!**/node_modules/**/prebuilds/darwin*/**",
+          "!**/node_modules/**/prebuilds/linux*/**",
+          "!**/node_modules/**/prebuilds/win32-ia32/**",
+          "!**/node_modules/**/prebuilds/win32-arm64/**",
+          "!**/node_modules/**/bin/napi-*/darwin/**",
+          "!**/node_modules/**/bin/napi-*/linux/**",
+          "!**/node_modules/**/bin/napi-*/win32/ia32/**",
+          "!**/node_modules/**/bin/napi-*/win32/arm64/**"
+        ]),
         signExts: [".dll", ".node"],
         signAndEditExecutable: false
       })
     );
     expect(builderConfig.mac).toEqual(
       expect.objectContaining({
+        files: expect.arrayContaining([
+          "!**/node_modules/**/prebuilds/linux*/**",
+          "!**/node_modules/**/prebuilds/win32*/**",
+          "!**/node_modules/**/bin/napi-*/linux/**",
+          "!**/node_modules/**/bin/napi-*/win32/**"
+        ]),
         hardenedRuntime: true,
         gatekeeperAssess: false,
         notarize: false
