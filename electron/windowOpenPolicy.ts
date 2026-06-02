@@ -1,9 +1,27 @@
-import type { HandlerDetails, WindowOpenHandlerResponse } from "electron";
+import type { BrowserWindowConstructorOptions, HandlerDetails, WindowOpenHandlerResponse } from "electron";
+
+export const liteformsHldHologramWindowName = "liteforms-hld-hologram";
+
+export const hologramWindowBrowserOptions: BrowserWindowConstructorOptions = {
+  autoHideMenuBar: true,
+  backgroundColor: "#000000",
+  frame: false,
+  fullscreen: true,
+  fullscreenable: true,
+  hasShadow: false,
+  roundedCorners: false,
+  title: "Liteforms Hologram",
+  useContentSize: true,
+};
 
 export type WindowOpenDecision = {
   response: WindowOpenHandlerResponse;
   externalUrl?: string;
 };
+
+type WindowOpenRequestDetails =
+  & Pick<HandlerDetails, "url">
+  & Partial<Pick<HandlerDetails, "features" | "frameName">>;
 
 export function isAppWindowUrl(targetUrl: string, allowedOrigin: string) {
   if (targetUrl === "" || targetUrl === "about:blank") return true;
@@ -28,11 +46,18 @@ export function isExternalUrl(targetUrl: string, allowedOrigin: string) {
 }
 
 export function resolveWindowOpenRequest(
-  details: Pick<HandlerDetails, "url">,
+  details: WindowOpenRequestDetails,
   allowedOrigin: string
 ): WindowOpenDecision {
   if (isAppWindowUrl(details.url, allowedOrigin)) {
-    return { response: { action: "allow" } };
+    return {
+      response: {
+        action: "allow",
+        ...(isHologramWindowOpenRequest(details) ? {
+          overrideBrowserWindowOptions: hologramWindowBrowserOptions,
+        } : {}),
+      },
+    };
   }
 
   if (isExternalUrl(details.url, allowedOrigin)) {
@@ -43,4 +68,25 @@ export function resolveWindowOpenRequest(
   }
 
   return { response: { action: "deny" } };
+}
+
+export function isHologramWindowOpenRequest(details: WindowOpenRequestDetails) {
+  if (!isBlankWindowUrl(details.url)) return false;
+
+  return details.frameName === liteformsHldHologramWindowName
+    || hasWindowFeature(details.features, "fullscreenEnabled", "true");
+}
+
+function isBlankWindowUrl(targetUrl: string) {
+  return targetUrl === "" || targetUrl === "about:blank";
+}
+
+function hasWindowFeature(features: string | undefined, name: string, expectedValue: string) {
+  if (!features) return false;
+
+  return features.split(",").some((feature) => {
+    const [rawName, rawValue = ""] = feature.split("=", 2);
+    return rawName.trim().toLowerCase() === name.toLowerCase()
+      && rawValue.trim().toLowerCase() === expectedValue.toLowerCase();
+  });
 }

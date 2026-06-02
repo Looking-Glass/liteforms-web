@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isExternalUrl, resolveWindowOpenRequest } from "./windowOpenPolicy";
+import {
+  hologramWindowBrowserOptions,
+  isExternalUrl,
+  resolveWindowOpenRequest,
+} from "./windowOpenPolicy";
 
 const appOrigin = "http://127.0.0.1:4173";
 
@@ -10,8 +14,51 @@ describe("Electron window open policy", () => {
     });
   });
 
+  it("makes Looking Glass display popups borderless fullscreen windows", () => {
+    expect(
+      resolveWindowOpenRequest({
+        url: "about:blank",
+        frameName: "new",
+        features:
+          "left=1920,top=0,width=1440,height=2560,menubar=no,toolbar=no,fullscreenEnabled=true",
+      }, appOrigin)
+    ).toEqual({
+      response: {
+        action: "allow",
+        overrideBrowserWindowOptions: hologramWindowBrowserOptions,
+      },
+    });
+  });
+
+  it("also treats the Liteforms HLD fallback popup as a borderless fullscreen window", () => {
+    expect(
+      resolveWindowOpenRequest({
+        url: "about:blank",
+        frameName: "liteforms-hld-hologram",
+        features: "width=640,height=960",
+      }, appOrigin)
+    ).toEqual({
+      response: {
+        action: "allow",
+        overrideBrowserWindowOptions: hologramWindowBrowserOptions,
+      },
+    });
+  });
+
   it("allows same-origin app popups", () => {
     expect(resolveWindowOpenRequest({ url: `${appOrigin}/hologram` }, appOrigin)).toEqual({
+      response: { action: "allow" },
+    });
+  });
+
+  it("does not make same-origin app routes fullscreen from popup features alone", () => {
+    expect(
+      resolveWindowOpenRequest({
+        url: `${appOrigin}/hologram`,
+        frameName: "new",
+        features: "fullscreenEnabled=true",
+      }, appOrigin)
+    ).toEqual({
       response: { action: "allow" },
     });
   });

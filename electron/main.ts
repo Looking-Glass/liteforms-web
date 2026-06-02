@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -70,6 +70,7 @@ function createWindow(url: string) {
     minHeight: 640,
     show: true,
     title: "Liteforms",
+    autoHideMenuBar: true,
     backgroundColor: "#080808",
     webPreferences: {
       contextIsolation: true,
@@ -111,6 +112,8 @@ app.whenReady().then(async () => {
   if (process.platform === "win32") {
     app.setAppUserModelId("org.liteforms.web");
   }
+
+  Menu.setApplicationMenu(null);
 
   appUrl = await resolveAppUrl();
   createWindow(appUrl);
