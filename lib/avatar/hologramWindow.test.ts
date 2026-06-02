@@ -5,6 +5,7 @@ import {
   findSecondaryScreen,
   isLookingGlassDeviceConnected,
   openHldHologramWindow,
+  shouldEnterHldFallback,
   shouldHideHologramButtonForScreen,
 } from "./hologramWindow";
 
@@ -15,6 +16,24 @@ describe("isLookingGlassDeviceConnected", () => {
 
   it("returns false when the calibration still has the empty default serial", () => {
     expect(isLookingGlassDeviceConnected({ calibration: { serial: "" } })).toBe(false);
+  });
+});
+
+describe("shouldEnterHldFallback", () => {
+  it("does not enter HLD fallback when browser calibration has a Looking Glass serial", () => {
+    expect(shouldEnterHldFallback({ calibration: { serial: "LKG-P123" } })).toBe(false);
+  });
+
+  it("does not enter HLD fallback while native display detection is pending", () => {
+    expect(shouldEnterHldFallback({ calibration: { serial: "" } }, "pending")).toBe(false);
+  });
+
+  it("does not enter HLD fallback when native Bridge detected a light field display", () => {
+    expect(shouldEnterHldFallback({ calibration: { serial: "" } }, "connected")).toBe(false);
+  });
+
+  it("enters HLD fallback when neither WebXR nor native Bridge found a Looking Glass display", () => {
+    expect(shouldEnterHldFallback({ calibration: { serial: "" } }, "unavailable")).toBe(true);
   });
 });
 

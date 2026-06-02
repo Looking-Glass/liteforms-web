@@ -19,7 +19,7 @@ The default path is designed to work without a hosted account system: users can 
 - Node.js 20 or newer is recommended.
 - npm.
 - A modern Chromium-based browser is recommended for local model and audio features.
-- Looking Glass Go/WebXR use requires a Bridge driver. Browser builds check the installed Looking Glass Bridge runtime through `@lookingglass/bridge`; Electron builds first probe the bundled native Bridge SDK driver.
+- Looking Glass Go/WebXR browser builds check the installed Looking Glass Bridge runtime through `@lookingglass/bridge`. Electron builds probe the bundled native Bridge SDK libraries in-process, so native device detection does not require `LookingGlassBridge.exe` to be running.
 
 Local browser models can be large. The first run may download model assets and can take a while depending on network speed and hardware.
 
@@ -74,9 +74,11 @@ Then launch Electron in another:
 npm run dev:electron
 ```
 
+The `dev:electron` script points Electron at `http://localhost:3000`, so keep port `3000` free when testing Electron locally.
+
 The packaged Electron app starts its bundled Next server on a loopback-only port and opens that local URL. Provider credentials still come from the app UI or local browser storage. Local `.env` files are excluded from the Electron package configuration.
 
-Electron packages native Looking Glass Bridge SDK assets from `native/bridge/<platform-arch>` into `resources/bridge/<platform-arch>`. Windows x64 assets are included. macOS packaging expects `native/bridge/darwin-x64/libbridge_inproc.dylib` and/or `native/bridge/darwin-arm64/libbridge_inproc.dylib` plus their adjacent dependencies before building macOS installers.
+Electron packages native Looking Glass Bridge SDK assets from `native/bridge/<platform-arch>` into `resources/bridge/<platform-arch>`. These bundled SDK libraries host the Bridge service engine inside the Electron probe helper; they are not just a client for a separately running `LookingGlassBridge.exe`. Windows x64 assets are included. macOS packaging expects `native/bridge/darwin-x64/libbridge_inproc.dylib` and/or `native/bridge/darwin-arm64/libbridge_inproc.dylib` plus their adjacent dependencies before building macOS installers.
 
 ## Configuration
 
@@ -112,7 +114,7 @@ workers/      Browser workers for local model execution
 
 ## Open-Source Notes
 
-While Liteforms is open source, packages used by the project may or may not be. Looking Glass integration uses the official `@lookingglass/bridge` SDK for browser Bridge status checks, bundled Bridge SDK native assets for Electron, and `@lookingglass/webxr` for WebXR display support.
+While Liteforms is open source, packages used by the project may or may not be. Looking Glass integration uses the official `@lookingglass/bridge` SDK for browser Bridge status checks, bundled Bridge SDK native assets for Electron runtime probing, and `@lookingglass/webxr` for WebXR display support.
 
 ## License
 

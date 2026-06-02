@@ -1,6 +1,6 @@
 # Native Looking Glass Bridge assets
 
-Electron packages these folders into `resources/bridge/<platform-arch>` and probes them from an isolated helper process.
+Electron packages these folders into `resources/bridge/<platform-arch>` and probes them from an isolated helper process. These files are the Bridge SDK dynamic libraries used for in-process native detection; they do not need `LookingGlassBridge.exe` to be running.
 
 Expected layouts:
 

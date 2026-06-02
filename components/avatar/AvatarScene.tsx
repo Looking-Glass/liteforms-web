@@ -53,14 +53,16 @@ import {
 } from "@/lib/avatar/hldShadowCompositor";
 import {
   detectSingleScreen,
-  isLookingGlassDeviceConnected,
+  shouldEnterHldFallback,
   openHldHologramWindow,
+  type NativeLookingGlassDisplayConnection,
   shouldHideHologramButtonForScreen,
 } from "@/lib/avatar/hologramWindow";
 import {
   applyNativeLookingGlassBridgeCalibration,
   getNativeLookingGlassBridgeState,
   hasNativeLookingGlassBridgeApi,
+  isNativeLookingGlassBridgeDisplayConnected,
 } from "@/lib/avatar/nativeLookingGlassBridge";
 import { installEditableKeyboardEventShield } from "@/lib/avatar/keyboardEventShield";
 import { createModelDragRotationController } from "@/lib/avatar/modelDragRotation";
@@ -282,6 +284,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
     let exitHldFallback: (() => void) | undefined;
     let isHldFallbackActive = false;
     let isLkgSessionActive = false;
+    let nativeLookingGlassDisplayConnection: NativeLookingGlassDisplayConnection = "unavailable";
 
     const editableKeyboardShieldCleanup = installEditableKeyboardEventShield(window);
 
@@ -298,6 +301,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
         const nativeBridgeState = await getNativeLookingGlassBridgeState();
         if (disposed) return;
 
+        nativeLookingGlassDisplayConnection = isNativeLookingGlassBridgeDisplayConnected(nativeBridgeState)
+          ? "connected"
+          : "unavailable";
+
         if (applyNativeLookingGlassBridgeCalibration(LookingGlassConfig, nativeBridgeState)) {
           if (nativeBridgeCalibrationRetryId !== undefined) {
             window.clearInterval(nativeBridgeCalibrationRetryId);
@@ -307,6 +314,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       };
 
       if (hasNativeLookingGlassBridgeApi()) {
+        nativeLookingGlassDisplayConnection = "pending";
         void syncNativeBridgeCalibration();
         nativeBridgeCalibrationRetryId = window.setInterval(() => {
           void syncNativeBridgeCalibration();
@@ -701,10 +709,10 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
           if (isHldFallbackActive) {
             event.preventDefault();
             event.stopImmediatePropagation();
-              exitHldFallback?.();
-              return;
+            exitHldFallback?.();
+            return;
           }
-          if (isLookingGlassDeviceConnected(LookingGlassConfig)) return;
+          if (!shouldEnterHldFallback(LookingGlassConfig, nativeLookingGlassDisplayConnection)) return;
           event.preventDefault();
           event.stopImmediatePropagation();
           void enterHldFallback();

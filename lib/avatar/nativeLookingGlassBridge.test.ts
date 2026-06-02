@@ -4,6 +4,7 @@ import {
   getNativeLookingGlassBridgeDriverStatus,
   getNativeLookingGlassBridgeState,
   hasNativeLookingGlassBridgeApi,
+  isNativeLookingGlassBridgeDisplayConnected,
 } from "./nativeLookingGlassBridge";
 
 const getDriverStatus = vi.fn();
@@ -77,6 +78,27 @@ describe("native Looking Glass Bridge helpers", () => {
         liteformsElectron: makeElectronApi(),
       })
     ).resolves.toBe(state);
+  });
+
+  it("treats an available native Bridge state as a connected light field display", () => {
+    expect(
+      isNativeLookingGlassBridgeDisplayConnected({
+        available: true,
+        source: "native",
+        display: { id: "1", name: "Looking Glass Go", serial: "LKG-E12345", width: 1440, height: 2560 },
+        calibration,
+      })
+    ).toBe(true);
+  });
+
+  it("does not treat a failed native Bridge probe as a connected display", () => {
+    expect(
+      isNativeLookingGlassBridgeDisplayConnected({
+        available: false,
+        source: "native",
+        error: "No Looking Glass display detected.",
+      })
+    ).toBe(false);
   });
 
   it("applies native calibration and quilt settings to WebXR config", () => {

@@ -39,6 +39,7 @@ async function loadNextConfig(electronBuild?: string) {
 describe("Electron build configuration", () => {
   afterEach(() => {
     delete process.env.LITEFORMS_ELECTRON_BUILD;
+    delete process.env.LITEFORMS_ELECTRON_BUILDER_PLATFORM;
     clearAzureTrustedSigningEnv();
     vi.resetModules();
   });
@@ -103,38 +104,32 @@ describe("Electron build configuration", () => {
         "package.json",
         "!**/.env",
         "!**/.env.*",
-        "!**/.env*.local"
+        "!**/.env*.local",
+        "!**/node_modules/**/prebuilds/darwin*/**",
+        "!**/node_modules/**/prebuilds/linux*/**",
+        "!**/node_modules/**/prebuilds/win32-ia32/**",
+        "!**/node_modules/**/prebuilds/win32-arm64/**",
+        "!**/node_modules/**/bin/napi-*/darwin/**",
+        "!**/node_modules/**/bin/napi-*/linux/**",
+        "!**/node_modules/**/bin/napi-*/win32/ia32/**",
+        "!**/node_modules/**/bin/napi-*/win32/arm64/**"
       ])
     );
     expect(builderConfig.win).toEqual(
       expect.objectContaining({
-        files: expect.arrayContaining([
-          "!**/node_modules/**/prebuilds/darwin*/**",
-          "!**/node_modules/**/prebuilds/linux*/**",
-          "!**/node_modules/**/prebuilds/win32-ia32/**",
-          "!**/node_modules/**/prebuilds/win32-arm64/**",
-          "!**/node_modules/**/bin/napi-*/darwin/**",
-          "!**/node_modules/**/bin/napi-*/linux/**",
-          "!**/node_modules/**/bin/napi-*/win32/ia32/**",
-          "!**/node_modules/**/bin/napi-*/win32/arm64/**"
-        ]),
         signExts: [".dll", ".node"],
         signAndEditExecutable: false
       })
     );
+    expect(builderConfig.win.files).toBeUndefined();
     expect(builderConfig.mac).toEqual(
       expect.objectContaining({
-        files: expect.arrayContaining([
-          "!**/node_modules/**/prebuilds/linux*/**",
-          "!**/node_modules/**/prebuilds/win32*/**",
-          "!**/node_modules/**/bin/napi-*/linux/**",
-          "!**/node_modules/**/bin/napi-*/win32/**"
-        ]),
         hardenedRuntime: true,
         gatekeeperAssess: false,
         notarize: false
       })
     );
+    expect(builderConfig.mac.files).toBeUndefined();
     expect(builderConfig.asarUnpack).toEqual(
       expect.arrayContaining([".next/standalone/**", "node_modules/@koromix/koffi-*/**", "node_modules/koffi/**"])
     );
@@ -147,6 +142,24 @@ describe("Electron build configuration", () => {
       ])
     );
     expect(builderConfig.linux).toBeUndefined();
+  });
+
+  it("switches native binary excludes for macOS packages without broad platform file globs", () => {
+    clearAzureTrustedSigningEnv();
+    process.env.LITEFORMS_ELECTRON_BUILDER_PLATFORM = "darwin";
+    const builderConfig = readBuilderConfig();
+
+    expect(builderConfig.files).toEqual(
+      expect.arrayContaining([
+        "!**/node_modules/**/prebuilds/linux*/**",
+        "!**/node_modules/**/prebuilds/win32*/**",
+        "!**/node_modules/**/bin/napi-*/linux/**",
+        "!**/node_modules/**/bin/napi-*/win32/**"
+      ])
+    );
+    expect(builderConfig.files).not.toEqual(expect.arrayContaining(["!**/node_modules/**/prebuilds/darwin*/**"]));
+    expect(builderConfig.win.files).toBeUndefined();
+    expect(builderConfig.mac.files).toBeUndefined();
   });
 
   it("enables Azure Trusted Signing when CI credentials are present", () => {

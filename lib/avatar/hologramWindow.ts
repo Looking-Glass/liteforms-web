@@ -4,6 +4,8 @@ type LookingGlassConnectionState = {
   };
 };
 
+export type NativeLookingGlassDisplayConnection = "unavailable" | "pending" | "connected";
+
 export type ScreenLike = {
   left: number;
   top: number;
@@ -21,6 +23,15 @@ export type WindowPositionLike = {
 
 export function isLookingGlassDeviceConnected(config: LookingGlassConnectionState): boolean {
   return Boolean(config.calibration?.serial?.trim());
+}
+
+export function shouldEnterHldFallback(
+  config: LookingGlassConnectionState,
+  nativeConnection: NativeLookingGlassDisplayConnection = "unavailable"
+): boolean {
+  if (isLookingGlassDeviceConnected(config)) return false;
+
+  return nativeConnection === "unavailable";
 }
 
 export function shouldHideHologramButtonForScreen(screen: unknown): boolean {

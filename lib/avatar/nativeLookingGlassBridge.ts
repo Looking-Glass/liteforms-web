@@ -62,6 +62,12 @@ export async function getNativeLookingGlassBridgeDriverStatus(
   }
 }
 
+export function isNativeLookingGlassBridgeDisplayConnected(state: NativeLookingGlassBridgeState): boolean {
+  if (!state.available) return false;
+
+  return Boolean((state.display.serial || state.calibration.serial).trim());
+}
+
 export function applyNativeLookingGlassBridgeCalibration(
   config: LookingGlassConfigLike,
   state: NativeLookingGlassBridgeState

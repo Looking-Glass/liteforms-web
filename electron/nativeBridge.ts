@@ -50,6 +50,8 @@ type NativeBridgeService = {
 
 const probeTimeoutMs = 7000;
 const cacheTtlMs = 2500;
+const nativeBridgeProbeResultFd = 3;
+const nativeBridgeProbeResultFdEnv = "LITEFORMS_NATIVE_BRIDGE_RESULT_FD";
 
 export function createNativeBridgeService(): NativeBridgeService {
   let activeProbe: ChildProcess | undefined;
@@ -141,11 +143,12 @@ export function createNativeBridgeService(): NativeBridgeService {
       const child = spawn(process.execPath, [helperPath], {
         cwd: resolved.runtimeDir,
         env,
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe", "pipe"],
         windowsHide: true
       });
       activeProbe = child;
 
+      let resultOutput = "";
       let stdout = "";
       let stderr = "";
       let settled = false;
@@ -167,6 +170,9 @@ export function createNativeBridgeService(): NativeBridgeService {
       child.stderr?.on("data", (chunk) => {
         stderr += chunk.toString();
       });
+      child.stdio[nativeBridgeProbeResultFd]?.on("data", (chunk) => {
+        resultOutput += chunk.toString();
+      });
       child.on("error", (error) => {
         if (settled) return;
         settled = true;
@@ -184,7 +190,7 @@ export function createNativeBridgeService(): NativeBridgeService {
         clearTimeout(timeout);
         activeProbe = undefined;
 
-        const output = stdout.trim();
+        const output = (resultOutput || stdout).trim();
         if (!output) {
           const reason = stderr.trim() || `probe exited with code ${code ?? "null"} and signal ${signal ?? "null"}`;
           resolve({
@@ -225,6 +231,7 @@ function createNativeBridgeProbeEnv(resolved: SupportedNativeBridgeRuntime): Ele
     ...createForwardedShellEnv(process.env),
     ELECTRON_RUN_AS_NODE: "1",
     LITEFORMS_NATIVE_BRIDGE_LIBRARY: resolved.libraryPath,
+    [nativeBridgeProbeResultFdEnv]: String(nativeBridgeProbeResultFd),
     LITEFORMS_NATIVE_BRIDGE_RUNTIME_DIR: resolved.runtimeDir,
     NODE_ENV: process.env.NODE_ENV ?? "production"
   };

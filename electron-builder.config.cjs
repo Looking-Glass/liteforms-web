@@ -43,6 +43,14 @@ const macNativeBinaryExcludes = [
   "!**/node_modules/**/bin/napi-*/win32/**"
 ];
 
+const electronBuilderPlatform = process.env.LITEFORMS_ELECTRON_BUILDER_PLATFORM ?? process.platform;
+const platformNativeBinaryExcludes =
+  electronBuilderPlatform === "darwin"
+    ? macNativeBinaryExcludes
+    : electronBuilderPlatform === "win32"
+      ? windowsNativeBinaryExcludes
+      : [];
+
 module.exports = {
   appId: "org.liteforms.web",
   productName: "Liteforms",
@@ -70,7 +78,10 @@ module.exports = {
     "!**/node_modules/.cache/**",
     "!**/__tests__/**",
     "!**/*.test.*",
-    "!**/*.smoke.test.*"
+    "!**/*.smoke.test.*",
+    // Keep these in the top-level allowlist. Platform-specific exclude-only `files`
+    // entries make electron-builder start from its default `**/*` include set.
+    ...platformNativeBinaryExcludes
   ],
   asarUnpack: [
     ".next/standalone/**",
@@ -80,12 +91,10 @@ module.exports = {
   extraResources: nativeBridgeResources,
   win: {
     ...windowsSigningConfig,
-    files: windowsNativeBinaryExcludes,
     signExts: [".dll", ".node"],
     target: ["nsis"]
   },
   mac: {
-    files: macNativeBinaryExcludes,
     target: ["dmg"],
     category: "public.app-category.entertainment",
     hardenedRuntime: true,
