@@ -1,0 +1,241 @@
+name: Build Electron App
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: electron-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            builder_target: --win --x64
+            artifact_name: liteforms-electron-windows
+          - os: macos-latest
+            platform: mac
+            builder_target: --mac --x64 --arm64
+            artifact_name: liteforms-electron-macos
+
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Update package version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag ${GITHUB_REF_NAME} is not a valid v-prefixed SemVer release tag."
+            exit 1
+          fi
+          echo "Setting package version to ${version}"
+          npm version "$version" --no-git-tag-version --allow-same-version
+
+      - name: Build Electron app
+        run: npm run build:electron
+
+      - name: Validate Windows signing secrets
+        if: matrix.platform == 'win'
+        shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+
+          for secret_name in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
+            if [ -z "${!secret_name}" ]; then
+              echo "${secret_name} is not set."
+              exit 1
+            fi
+          done
+
+      - name: Import macOS signing certificate
+        if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.APPLE_DEVELOPER_APPLICATION_CERT_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$BUILD_CERTIFICATE_BASE64" ]; then
+            echo "APPLE_DEVELOPER_APPLICATION_CERT_BASE64 is not set."
+            exit 1
+          fi
+
+          if [ -z "$P12_PASSWORD" ]; then
+            echo "APPLE_P12_PASSWORD is not set."
+            exit 1
+          fi
+
+          certificate_path="$RUNNER_TEMP/liteforms-application.p12"
+          keychain_path="$RUNNER_TEMP/liteforms-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 16)"
+
+          decode_base64() {
+            if base64 --decode < /dev/null > /dev/null 2>&1; then
+              base64 --decode
+            else
+              base64 -D
+            fi
+          }
+
+          printf '%s' "$BUILD_CERTIFICATE_BASE64" | decode_base64 > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+
+          security find-identity -v -p codesigning "$keychain_path" | grep "Developer ID Application"
+
+      - name: Package Electron app - Windows
+        if: matrix.platform == 'win'
+        shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          npm exec electron-builder -- --config electron-builder.config.cjs ${{ matrix.builder_target }} --publish never
+
+      - name: Package Electron app - macOS
+        if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+        run: |
+          set -euo pipefail
+          npm exec electron-builder -- --config electron-builder.config.cjs ${{ matrix.builder_target }} --publish never
+
+      - name: Verify macOS app signature
+        if: matrix.platform == 'mac'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          app_paths="$(find release -maxdepth 3 -name '*.app' -type d 2>/dev/null || true)"
+          if [ -z "$app_paths" ]; then
+            echo "No .app bundle found under release/."
+            find release -maxdepth 3 -type d || true
+            exit 1
+          fi
+
+          while IFS= read -r app_path; do
+            echo "Verifying signature for ${app_path}"
+            codesign --verify --deep --strict --verbose=2 "$app_path"
+          done <<< "$app_paths"
+
+      - name: Notarize macOS DMG
+        if: matrix.platform == 'mac'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          for secret_name in APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [ -z "${!secret_name}" ]; then
+              echo "${secret_name} is not set."
+              exit 1
+            fi
+          done
+
+          shopt -s nullglob
+          dmg_paths=(release/*.dmg)
+          if [ "${#dmg_paths[@]}" -eq 0 ]; then
+            echo "No .dmg artifact found under release/."
+            find release -maxdepth 3 -type f || true
+            exit 1
+          fi
+
+          for dmg_path in "${dmg_paths[@]}"; do
+            echo "Submitting ${dmg_path} for notarization"
+            xcrun notarytool submit "$dmg_path" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --wait
+
+            echo "Stapling notarization ticket to ${dmg_path}"
+            xcrun stapler staple "$dmg_path"
+            xcrun stapler validate "$dmg_path"
+            spctl --assess --type open --context context:primary-signature --verbose "$dmg_path"
+          done
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.blockmap
+            release/*.yml
+          if-no-files-found: warn
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            release-artifacts/**/*.dmg
+            release-artifacts/**/*.zip
+            release-artifacts/**/*.exe
+            release-artifacts/**/*.blockmap
+            release-artifacts/**/*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

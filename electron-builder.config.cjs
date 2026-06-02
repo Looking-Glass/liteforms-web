@@ -1,6 +1,23 @@
 /** @type {import("electron-builder").Configuration} */
 const { existsSync } = module.require("node:fs");
 
+const hasAzureTrustedSigningEnv = Boolean(
+  process.env.AZURE_TENANT_ID && process.env.AZURE_CLIENT_ID && process.env.AZURE_CLIENT_SECRET
+);
+
+const windowsSigningConfig = hasAzureTrustedSigningEnv
+  ? {
+      azureSignOptions: {
+        endpoint: "https://eus.codesigning.azure.net/",
+        certificateProfileName: "lkg-app",
+        codeSigningAccountName: "lookingglassfactory",
+        publisherName: "Looking Glass Factory Inc."
+      }
+    }
+  : {
+      signAndEditExecutable: false
+    };
+
 const nativeBridgeResources = [
   { from: "native/bridge/win32-x64", to: "bridge/win32-x64", filter: ["**/*"] },
   { from: "native/bridge/darwin-x64", to: "bridge/darwin-x64", filter: ["**/*"] },
@@ -43,11 +60,15 @@ module.exports = {
   ],
   extraResources: nativeBridgeResources,
   win: {
-    signAndEditExecutable: false,
+    ...windowsSigningConfig,
+    signExts: [".dll", ".node"],
     target: ["nsis"]
   },
   mac: {
     target: ["dmg"],
-    category: "public.app-category.entertainment"
+    category: "public.app-category.entertainment",
+    hardenedRuntime: true,
+    gatekeeperAssess: false,
+    notarize: false
   }
 };

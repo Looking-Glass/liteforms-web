@@ -9,6 +9,22 @@ function readPackageJson() {
   return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 }
 
+function readElectronWorkflow() {
+  return readFileSync(new URL("../.github/workflows/build-electron.yml", import.meta.url), "utf8");
+}
+
+function readBuilderConfig() {
+  const configPath = require.resolve("../electron-builder.config.cjs");
+  delete require.cache[configPath];
+  return require(configPath);
+}
+
+function clearAzureTrustedSigningEnv() {
+  delete process.env.AZURE_TENANT_ID;
+  delete process.env.AZURE_CLIENT_ID;
+  delete process.env.AZURE_CLIENT_SECRET;
+}
+
 async function loadNextConfig(electronBuild?: string) {
   vi.resetModules();
   if (electronBuild === undefined) {
@@ -23,6 +39,7 @@ async function loadNextConfig(electronBuild?: string) {
 describe("Electron build configuration", () => {
   afterEach(() => {
     delete process.env.LITEFORMS_ELECTRON_BUILD;
+    clearAzureTrustedSigningEnv();
     vi.resetModules();
   });
 
@@ -64,7 +81,8 @@ describe("Electron build configuration", () => {
   });
 
   it("packages the standalone Next server without local environment files", () => {
-    const builderConfig = require("../electron-builder.config.cjs");
+    clearAzureTrustedSigningEnv();
+    const builderConfig = readBuilderConfig();
 
     expect(builderConfig).toEqual(
       expect.objectContaining({
@@ -90,7 +108,15 @@ describe("Electron build configuration", () => {
     );
     expect(builderConfig.win).toEqual(
       expect.objectContaining({
+        signExts: [".dll", ".node"],
         signAndEditExecutable: false
+      })
+    );
+    expect(builderConfig.mac).toEqual(
+      expect.objectContaining({
+        hardenedRuntime: true,
+        gatekeeperAssess: false,
+        notarize: false
       })
     );
     expect(builderConfig.asarUnpack).toEqual(
@@ -105,6 +131,50 @@ describe("Electron build configuration", () => {
       ])
     );
     expect(builderConfig.linux).toBeUndefined();
+  });
+
+  it("enables Azure Trusted Signing when CI credentials are present", () => {
+    clearAzureTrustedSigningEnv();
+    process.env.AZURE_TENANT_ID = "tenant-id";
+    process.env.AZURE_CLIENT_ID = "client-id";
+    process.env.AZURE_CLIENT_SECRET = "client-secret";
+
+    const builderConfig = readBuilderConfig();
+
+    expect(builderConfig.win).toEqual(
+      expect.objectContaining({
+        azureSignOptions: expect.objectContaining({
+          endpoint: "https://eus.codesigning.azure.net/",
+          certificateProfileName: "lkg-app",
+          codeSigningAccountName: "lookingglassfactory",
+          publisherName: "Looking Glass Factory Inc."
+        })
+      })
+    );
+    expect(builderConfig.win.signAndEditExecutable).toBeUndefined();
+  });
+
+  it("builds and uploads Electron releases from version tags", () => {
+    const workflow = readElectronWorkflow();
+
+    expect(workflow).toContain('name: Build Electron App');
+    expect(workflow).toContain('"v[0-9]*.[0-9]*.[0-9]*"');
+    expect(workflow).toContain("valid v-prefixed SemVer release tag");
+    expect(workflow).toContain("persist-credentials: false");
+    expect(workflow).not.toContain("GH_TOKEN:");
+    expect(workflow).toContain("contents: read");
+    expect(workflow).toContain("contents: write");
+    expect(workflow).toContain("npm ci");
+    expect(workflow).toContain("npm run build:electron");
+    expect(workflow).toContain("APPLE_DEVELOPER_APPLICATION_CERT_BASE64");
+    expect(workflow).toContain("APPLE_APP_SPECIFIC_PASSWORD");
+    expect(workflow).toContain("xcrun notarytool submit");
+    expect(workflow).toContain("xcrun stapler staple");
+    expect(workflow).toContain("AZURE_TENANT_ID");
+    expect(workflow).toContain("AZURE_CLIENT_SECRET");
+    expect(workflow).toContain("needs: build");
+    expect(workflow).toContain("actions/download-artifact@v4");
+    expect(workflow).toContain("softprops/action-gh-release@v2");
   });
 
   it("starts the packaged Next server without forwarding provider secrets from the shell", () => {
