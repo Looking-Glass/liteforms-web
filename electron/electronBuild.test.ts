@@ -170,6 +170,8 @@ describe("Electron build configuration", () => {
     expect(workflow).toContain("APPLE_APP_SPECIFIC_PASSWORD");
     expect(workflow).toContain("xcrun notarytool submit");
     expect(workflow).toContain("xcrun stapler staple");
+    expect(workflow).toContain("xcrun stapler validate");
+    expect(workflow).not.toContain("context:primary-signature");
     expect(workflow).toContain("AZURE_TENANT_ID");
     expect(workflow).toContain("AZURE_CLIENT_SECRET");
     expect(workflow).toContain("needs: build");

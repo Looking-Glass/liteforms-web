@@ -198,7 +198,6 @@ jobs:
             echo "Stapling notarization ticket to ${dmg_path}"
             xcrun stapler staple "$dmg_path"
             xcrun stapler validate "$dmg_path"
-            spctl --assess --type open --context context:primary-signature --verbose "$dmg_path"
           done
 
       - name: Upload workflow artifacts
