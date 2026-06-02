@@ -12,6 +12,14 @@
     "sourceMap": false,
     "types": ["node"]
   },
-  "include": ["main.ts", "nativeBridge.ts", "nativeBridgePaths.ts", "nativeBridgeProbe.ts", "nextServer.ts", "preload.ts"],
+  "include": [
+    "main.ts",
+    "nativeBridge.ts",
+    "nativeBridgePaths.ts",
+    "nativeBridgeProbe.ts",
+    "nextServer.ts",
+    "preload.ts",
+    "windowOpenPolicy.ts"
+  ],
   "exclude": ["*.test.ts"]
 }

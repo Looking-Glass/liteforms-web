@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { registerNativeBridgeIpc } from "./nativeBridge";
 import { createNextServerEnv, getAvailablePort, resolveStandaloneDir, waitForHttpServer } from "./nextServer";
+import { isExternalUrl, resolveWindowOpenRequest } from "./windowOpenPolicy";
 
 let mainWindow: BrowserWindow | null = null;
 let nextServerProcess: ChildProcess | null = null;
@@ -80,11 +81,12 @@ function createWindow(url: string) {
     }
   });
 
-  mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
-    if (isExternalUrl(targetUrl, allowedOrigin)) {
-      void shell.openExternal(targetUrl);
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    const decision = resolveWindowOpenRequest(details, allowedOrigin);
+    if (decision.externalUrl) {
+      void shell.openExternal(decision.externalUrl);
     }
-    return { action: "deny" };
+    return decision.response;
   });
 
   mainWindow.webContents.on("will-navigate", (event, targetUrl) => {
@@ -96,18 +98,6 @@ function createWindow(url: string) {
   });
 
   void mainWindow.loadURL(url);
-}
-
-function isExternalUrl(targetUrl: string, allowedOrigin: string) {
-  try {
-    const parsed = new URL(targetUrl);
-    if (parsed.origin === allowedOrigin) {
-      return false;
-    }
-    return parsed.protocol === "https:" || parsed.protocol === "http:" || parsed.protocol === "mailto:";
-  } catch {
-    return false;
-  }
 }
 
 function stopNextServer() {
