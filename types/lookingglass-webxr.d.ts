@@ -3,9 +3,20 @@ declare module "@lookingglass/webxr" {
     value: number;
   };
 
+  type LookingGlassSubpixelCell = {
+    ROffsetX: number;
+    ROffsetY: number;
+    GOffsetX: number;
+    GOffsetY: number;
+    BOffsetX: number;
+    BOffsetY: number;
+  };
+
   type LookingGlassCalibration = {
     screenW: CalibrationValue;
     screenH: CalibrationValue;
+    CellPatternMode?: CalibrationValue;
+    subpixelCells?: LookingGlassSubpixelCell[];
     serial: string;
   };
 
@@ -19,6 +30,7 @@ declare module "@lookingglass/webxr" {
     fovy: number;
     viewCone: number;
     numViews: number;
+    subpixelMode: number;
   };
 
   type LookingGlassConfigSingleton = LookingGlassViewControls & {

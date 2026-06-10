@@ -59,6 +59,7 @@ import {
 } from "@/lib/avatar/hologramWindow";
 import { installEditableKeyboardEventShield } from "@/lib/avatar/keyboardEventShield";
 import { createModelDragRotationController } from "@/lib/avatar/modelDragRotation";
+import { createLookingGlassCalibrationSync } from "@/lib/avatar/lookingGlassCalibrationSync";
 import {
   AVATAR_CAMERA_ASPECT,
   AVATAR_CAMERA_DEFAULT_POSITION,
@@ -363,11 +364,7 @@ export function AvatarScene({ modelUrl = DEFAULT_MODEL_URL }: AvatarSceneProps) 
       renderer.domElement.addEventListener("pointerup", modelPointerUpListener);
       renderer.domElement.addEventListener("pointercancel", modelPointerCancelListener);
 
-      const lkgConfigChangeListener = () => {};
-      LookingGlassConfig.addEventListener("on-config-changed", lkgConfigChangeListener);
-      lkgConfigChangeCleanup = () => {
-        LookingGlassConfig.removeEventListener("on-config-changed", lkgConfigChangeListener);
-      };
+      lkgConfigChangeCleanup = createLookingGlassCalibrationSync(LookingGlassConfig);
       const ambientLight = new AmbientLight("#fff6e5", 1.2);
       const keyLight = new DirectionalLight("#ffffff", 2.4);
       keyLight.position.set(0.5, 0.5, 2);
